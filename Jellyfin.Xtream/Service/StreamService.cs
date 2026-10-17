@@ -24,6 +24,7 @@ using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Client.Models;
 using Jellyfin.Xtream.Configuration;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
@@ -239,9 +240,38 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
         {
             Id = ToGuid(prefix, category.CategoryId, 0, 0).ToString(),
             Name = category.CategoryName,
+            ImageUrl = GetCategoryImage(prefix, category.CategoryId),
             Tags = new List<string>(parsedName.Tags),
             Type = ChannelItemType.Folder,
         };
+    }
+
+    /// <summary>
+    /// Gets the configured image of a top-level channel.
+    /// </summary>
+    /// <param name="key">The channel key: Vod, Series or Catchup.</param>
+    /// <returns>The image response, without image when none is configured.</returns>
+    public static Task<DynamicImageResponse> GetChannelImage(string key)
+    {
+        if (!Plugin.Instance.Configuration.ChannelImages.TryGetValue(key, out string? image) || string.IsNullOrWhiteSpace(image))
+        {
+            return Task.FromResult(new DynamicImageResponse { HasImage = false });
+        }
+
+        return Task.FromResult(new DynamicImageResponse
+        {
+            HasImage = true,
+            Path = image,
+            Protocol = image.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? MediaProtocol.Http : MediaProtocol.File,
+        });
+    }
+
+    private static string? GetCategoryImage(int prefix, int categoryId)
+    {
+        string type = prefix == SeriesCategoryPrefix ? "Series" : "Vod";
+        return Plugin.Instance.Configuration.CategoryImages.TryGetValue($"{type}:{categoryId}", out string? image) && !string.IsNullOrWhiteSpace(image)
+            ? image
+            : null;
     }
 
     /// <summary>

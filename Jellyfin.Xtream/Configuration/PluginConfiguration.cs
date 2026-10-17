@@ -91,6 +91,16 @@ public class PluginConfiguration : BasePluginConfiguration
     public SerializableDictionary<int, HashSet<int>> Series { get; set; } = [];
 
     /// <summary>
+    /// Gets or sets the image URLs or local paths of the top-level channels, keyed by Vod, Series or Catchup.
+    /// </summary>
+    public SerializableDictionary<string, string> ChannelImages { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the image URLs or local paths of categories, keyed by Vod:{categoryId} or Series:{categoryId}.
+    /// </summary>
+    public SerializableDictionary<string, string> CategoryImages { get; set; } = [];
+
+    /// <summary>
     /// Gets or sets the channel override configuration for Live TV.
     /// </summary>
     public SerializableDictionary<int, ChannelOverrides> LiveTvOverrides { get; set; } = [];
