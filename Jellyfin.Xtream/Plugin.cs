@@ -122,6 +122,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             CreateStatic("XtreamSeries.js"),
             CreateStatic("XtreamVod.html"),
             CreateStatic("XtreamVod.js"),
+            CreateStatic("XtreamImages.html"),
+            CreateStatic("XtreamImages.js"),
         };
     }
 

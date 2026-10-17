@@ -61,6 +61,13 @@ The following credentials should be set correctly in the `Credentials` plugin co
 1. Modify the channel numbers, names, and icons if desired.
 1. Click `Save` on the bottom of the page.
 
+### Images
+
+The `Images` tab sets the image of the top-level Video On-Demand, Series and Catch-up channels, and of each selected Video On-Demand and Series category.
+Enter an image URL or a local path that the Jellyfin server can read; leave a field empty to keep the default.
+Run the `Refresh channels` scheduled task afterwards to apply the images to existing items.
+Catch-up folders use the channel logo, which can be set per channel on the `TV overrides` tab.
+
 ### External XMLTV EPG
 
 Jellyfin.Xtream can optionally use an external XMLTV file for Live TV guide data while continuing to use Xtream for channel discovery and stream playback.

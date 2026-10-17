@@ -1,0 +1,62 @@
+<div id="XtreamImagesPage" data-role="page" class="page type-interior pluginConfigurationPage withTabs"
+  data-require="emby-input,emby-button" data-controller="__plugin/XtreamImages.js">
+  <div data-role="content">
+    <div class="content-primary">
+      <form id="XtreamImagesForm">
+        <div class="fieldDescription">Enter an image URL or a local path that the Jellyfin server can read. Leave empty to keep the default image. Run the "Refresh channels" scheduled task to apply changes to existing items.</div>
+
+        <div class="sectionTitleContainer flex align-items-center">
+          <h2 class="sectionTitle">Channels</h2>
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="ImageVod">Video On-Demand</label>
+          <input is="emby-input" type="text" id="ImageVod" data-key="Vod" class="channel-image" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="ImageSeries">Series</label>
+          <input is="emby-input" type="text" id="ImageSeries" data-key="Series" class="channel-image" />
+        </div>
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="ImageCatchup">Catch-up</label>
+          <input is="emby-input" type="text" id="ImageCatchup" data-key="Catchup" class="channel-image" />
+        </div>
+
+        <div class="sectionTitleContainer flex align-items-center">
+          <h2 class="sectionTitle">Video On-Demand categories</h2>
+        </div>
+        <div class="inputContainer">
+          <table class="categories-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Image</th>
+              </tr>
+            </thead>
+            <tbody id="VodImages"></tbody>
+          </table>
+        </div>
+
+        <div class="sectionTitleContainer flex align-items-center">
+          <h2 class="sectionTitle">Series categories</h2>
+        </div>
+        <div class="inputContainer">
+          <table class="categories-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Image</th>
+              </tr>
+            </thead>
+            <tbody id="SeriesImages"></tbody>
+          </table>
+        </div>
+
+        <div>
+          <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+            <span>Save</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
