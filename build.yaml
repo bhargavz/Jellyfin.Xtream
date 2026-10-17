@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.9.1.0"
+version: "0.9.2.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,4 +12,4 @@ owner: "vandernorth"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  Image overrides for the top-level channels and for Video On-Demand and Series categories; XMLTV parser no longer skips the element after a text element.
+  Local channel images are no longer moved away by Jellyfin.
