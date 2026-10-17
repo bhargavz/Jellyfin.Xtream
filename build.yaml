@@ -1,15 +1,15 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.8.1.0"
+version: "0.9.0.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Stream content from an Xtream-compatible server."
 description: >
   Stream Live IPTV, Video On-Demand, and Series from an Xtream-compatible server using this plugin.
 category: "LiveTV"
-owner: "Kevinjil"
+owner: "vandernorth"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  changelog
+  Combined fork of Kevinjil/Jellyfin.Xtream: Jellyfin 12 support (#301), provider data fixes (#302) and external XMLTV EPG support (#299).
