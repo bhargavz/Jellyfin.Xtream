@@ -1,10 +1,19 @@
 # Jellyfin.Xtream
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/Kevinjil/Jellyfin.Xtream/total)
-![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/Kevinjil/Jellyfin.Xtream/latest/total)
-![GitHub commits since latest release](https://img.shields.io/github/commits-since/Kevinjil/Jellyfin.Xtream/latest)
-![Dynamic YAML Badge](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2FKevinjil%2FJellyfin.Xtream%2Frefs%2Fheads%2Fmaster%2Fbuild.yaml&query=targetAbi&label=Jellyfin%20ABI)
-![Dynamic YAML Badge](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2FKevinjil%2FJellyfin.Xtream%2Frefs%2Fheads%2Fmaster%2Fbuild.yaml&query=framework&label=.NET%20framework)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/vandernorth/Jellyfin.Xtream/total)
+![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/vandernorth/Jellyfin.Xtream/latest/total)
+![GitHub commits since latest release](https://img.shields.io/github/commits-since/vandernorth/Jellyfin.Xtream/latest)
+![Dynamic YAML Badge](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fvandernorth%2FJellyfin.Xtream%2Frefs%2Fheads%2Fmaster%2Fbuild.yaml&query=targetAbi&label=Jellyfin%20ABI)
+![Dynamic YAML Badge](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fvandernorth%2FJellyfin.Xtream%2Frefs%2Fheads%2Fmaster%2Fbuild.yaml&query=framework&label=.NET%20framework)
 The Jellyfin.Xtream plugin can be used to integrate the content provided by an [Xtream-compatible API](https://xtream-ui.org/api-xtreamui-xtreamcode/) in your [Jellyfin](https://jellyfin.org/) instance.
+
+> [!NOTE]
+> This is a fork of [Kevinjil/Jellyfin.Xtream](https://github.com/Kevinjil/Jellyfin.Xtream) that combines open upstream pull requests:
+> - [#301](https://github.com/Kevinjil/Jellyfin.Xtream/pull/301) Jellyfin 12 support
+> - [#302](https://github.com/Kevinjil/Jellyfin.Xtream/pull/302) Fixes for series, seasons and movies with unexpected provider data
+> - [#299](https://github.com/Kevinjil/Jellyfin.Xtream/pull/299) External XMLTV EPG support for Live TV channels
+>
+> Releases from this fork require **Jellyfin 12**. For Jellyfin 10.11, use the upstream plugin.
+> All credit for the plugin goes to Kevin Jilissen and the authors of these pull requests.
 
 ## Installation
 
@@ -15,8 +24,13 @@ To add the repository, follow these steps:
 1. Select the `Repositories` tab on the top of the page.
 1. Click the `+` symbol to add a repository.
 1. Enter `Jellyfin.Xtream` as the repository name.
-1. Enter [`https://kevinjil.github.io/Jellyfin.Xtream/repository.json`](https://kevinjil.github.io/Jellyfin.Xtream/repository.json) as the repository url.
+1. Enter [`https://vandernorth.github.io/Jellyfin.Xtream/repository.json`](https://vandernorth.github.io/Jellyfin.Xtream/repository.json) as the repository url.
 1. Click save.
+
+### Switching from the upstream plugin
+
+This fork uses the same plugin id, so your configuration is kept.
+Remove the upstream repository (`kevinjil.github.io`) before adding this one, otherwise Jellyfin may offer versions from both.
 
 To install or update the plugin, follow these steps:
 
