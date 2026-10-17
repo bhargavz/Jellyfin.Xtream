@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -25,6 +26,7 @@ using Jellyfin.Xtream.Client.Models;
 using Jellyfin.Xtream.Configuration;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
@@ -258,11 +260,24 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
             return Task.FromResult(new DynamicImageResponse { HasImage = false });
         }
 
+        if (image.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new DynamicImageResponse { HasImage = true, Path = image, Protocol = MediaProtocol.Http });
+        }
+
+        // Jellyfin moves a local source file into its metadata folder, so hand it a stream and keep the original.
         return Task.FromResult(new DynamicImageResponse
         {
             HasImage = true,
-            Path = image,
-            Protocol = image.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? MediaProtocol.Http : MediaProtocol.File,
+            Stream = File.OpenRead(image),
+            Format = Path.GetExtension(image).ToLowerInvariant() switch
+            {
+                ".jpg" or ".jpeg" => ImageFormat.Jpg,
+                ".webp" => ImageFormat.Webp,
+                ".gif" => ImageFormat.Gif,
+                ".bmp" => ImageFormat.Bmp,
+                _ => ImageFormat.Png,
+            },
         });
     }
 
