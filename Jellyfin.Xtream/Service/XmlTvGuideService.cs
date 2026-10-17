@@ -210,12 +210,16 @@ public static class XmlTvGuideService
 
         var displayNames = new List<string>();
         using XmlReader subtree = reader.ReadSubtree();
-        while (subtree.Read())
+        bool positioned = false;
+        while (positioned || subtree.Read())
         {
+            positioned = false;
             if (subtree.NodeType == XmlNodeType.Element
                 && subtree.Name.Equals("display-name", StringComparison.OrdinalIgnoreCase))
             {
+                // ReadElementContentAsString already moves to the next node, which must not be skipped.
                 string value = subtree.ReadElementContentAsString().Trim();
+                positioned = true;
                 if (!string.IsNullOrWhiteSpace(value))
                 {
                     displayNames.Add(value);
@@ -263,8 +267,18 @@ public static class XmlTvGuideService
         var categories = new List<string>();
 
         using XmlReader subtree = reader.ReadSubtree();
-        while (subtree.Read())
+        bool positioned = false;
+
+        // ReadElementContentAsString already moves to the next node, which must not be skipped.
+        string ReadText()
         {
+            positioned = true;
+            return subtree.ReadElementContentAsString();
+        }
+
+        while (positioned || subtree.Read())
+        {
+            positioned = false;
             if (subtree.NodeType != XmlNodeType.Element)
             {
                 continue;
@@ -272,19 +286,19 @@ public static class XmlTvGuideService
 
             if (subtree.Name.Equals("title", StringComparison.OrdinalIgnoreCase))
             {
-                title = subtree.ReadElementContentAsString().Trim();
+                title = ReadText().Trim();
             }
             else if (subtree.Name.Equals("sub-title", StringComparison.OrdinalIgnoreCase))
             {
-                subTitle = NullIfEmpty(subtree.ReadElementContentAsString());
+                subTitle = NullIfEmpty(ReadText());
             }
             else if (subtree.Name.Equals("desc", StringComparison.OrdinalIgnoreCase))
             {
-                description = NullIfEmpty(subtree.ReadElementContentAsString());
+                description = NullIfEmpty(ReadText());
             }
             else if (subtree.Name.Equals("category", StringComparison.OrdinalIgnoreCase))
             {
-                string category = subtree.ReadElementContentAsString().Trim();
+                string category = ReadText().Trim();
                 if (!string.IsNullOrWhiteSpace(category) && !categories.Contains(category, StringComparer.OrdinalIgnoreCase))
                 {
                     categories.Add(category);
@@ -296,7 +310,7 @@ public static class XmlTvGuideService
             }
             else if (subtree.Name.Equals("date", StringComparison.OrdinalIgnoreCase))
             {
-                string date = subtree.ReadElementContentAsString().Trim();
+                string date = ReadText().Trim();
                 if (date.Length >= 4 && int.TryParse(date[..4], NumberStyles.None, CultureInfo.InvariantCulture, out int year))
                 {
                     productionYear = year;
@@ -305,7 +319,7 @@ public static class XmlTvGuideService
             else if (subtree.Name.Equals("episode-num", StringComparison.OrdinalIgnoreCase))
             {
                 string? system = subtree.GetAttribute("system");
-                string value = subtree.ReadElementContentAsString().Trim();
+                string value = ReadText().Trim();
                 if (string.Equals(system, "xmltv_ns", StringComparison.OrdinalIgnoreCase))
                 {
                     ParseXmlTvNs(value, out seasonNumber, out episodeNumber);
