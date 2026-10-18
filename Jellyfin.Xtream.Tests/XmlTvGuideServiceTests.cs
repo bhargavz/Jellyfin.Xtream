@@ -34,7 +34,7 @@ public class XmlTvGuideServiceTests
     [Fact]
     public void ElementsDirectlyAfterTextElementsAreRead()
     {
-        string path = Path.Combine(Path.GetTempPath(), $"xmltv-{Guid.NewGuid():N}.xml");
+        string path = Path.Join(Path.GetTempPath(), $"xmltv-{Guid.NewGuid():N}.xml");
         File.WriteAllText(path, Guide);
         try
         {
