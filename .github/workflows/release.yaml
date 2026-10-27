@@ -1,0 +1,159 @@
+name: "🚀 Release Plugin"
+
+# Builds and tests the plugin, attaches jellyfin-xtream_<version>.zip to the GitHub release for the tag,
+# merges the version into the plugin repository manifest and deploys it to GitHub Pages:
+#   https://bhargavz.github.io/Jellyfin.Xtream/repository.json
+#
+# Triggers: pushing a tag v* (the release is created if it does not exist), publishing a GitHub release,
+# or running it by hand for an existing tag. The tag must match the version in build.yaml
+# (v0.10.1 or v0.10.1.0 for version 0.10.1.0).
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v0.10.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One run at a time, so two releases never overwrite each other's repository.json.
+concurrency:
+  group: release-pages
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  build:
+    name: Build, test and package
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      md5: ${{ steps.package.outputs.md5 }}
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Check tag matches build.yaml version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version:[[:space:]]*"\{0,1\}\([0-9.]*\)"\{0,1\}[[:space:]]*$/\1/p' build.yaml)
+          tagver="${TAG#v}"
+          while [ "$(echo "$tagver" | tr -cd '.' | wc -c)" -lt 3 ]; do tagver="$tagver.0"; done
+          echo "build.yaml version: $version, tag: $TAG"
+          if [ "$version" != "$tagver" ]; then
+            echo "::error::Tag $TAG does not match build.yaml version $version"
+            exit 1
+          fi
+
+      - name: Test
+        run: dotnet test Jellyfin.Xtream.sln -c Release
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: ./scripts/Package.ps1 -Configuration Release
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-package
+          path: |
+            dist/*.zip
+            dist/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach to release and build manifest
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Download package
+        uses: actions/download-artifact@v8
+        with:
+          name: plugin-package
+          path: dist
+
+      - name: Create or update GitHub release
+        shell: bash
+        run: |
+          zip="dist/jellyfin-xtream_${VERSION}.zip"
+          (cd dist && md5sum "jellyfin-xtream_${VERSION}.zip" > "jellyfin-xtream_${VERSION}.zip.md5")
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            changelog=$(pwsh -NoProfile -Command "(Get-Content -Raw dist/jellyfin-xtream_${VERSION}.json | ConvertFrom-Json).changelog")
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes "$changelog"
+          fi
+          gh release upload "$TAG" "$zip" "$zip.md5" --clobber
+
+      - name: Fetch the published manifest
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          url="https://${owner}.github.io/${repo}/repository.json"
+          code=$(curl -sSL -o published.json -w '%{http_code}' "${url}?nocache=${GITHUB_RUN_ID}" || true)
+          echo "GET $url -> $code"
+          case "$code" in
+            200) python3 -c 'import json,sys; d=json.load(open("published.json")); assert isinstance(d, list)' ;;
+            404) echo "[]" > published.json ;;
+            *) echo "::error::Could not fetch the current manifest (HTTP $code); refusing to drop older versions"; exit 1 ;;
+          esac
+
+      - name: Build repository.json
+        shell: pwsh
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/download/$env:TAG/jellyfin-xtream_$env:VERSION.zip"
+          ./scripts/Update-RepositoryManifest.ps1 -PackageInfo "dist/jellyfin-xtream_$env:VERSION.json" `
+            -SourceUrl $url -ExistingManifest published.json -OutFile site/repository.json
+          Get-Content site/repository.json -TotalCount 40
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Deploy manifest to GitHub Pages
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}repository.json
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

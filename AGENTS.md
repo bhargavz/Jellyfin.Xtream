@@ -22,11 +22,21 @@ next steps.
 ```powershell
 $env:PATH = 'C:\Program Files\dotnet;' + $env:PATH          # .NET SDK 10.0.403 (installed 2026-10-26 via winget)
 dotnet build -c Release
+<<<<<<< HEAD
 dotnet test  -c Release                                     # 628 tests; TreatWarningsAsErrors is on
 dotnet publish Jellyfin.Xtream\Jellyfin.Xtream.csproj -c Release -o .tmp\publish-<ver>
 # zip = Jellyfin.Xtream.dll + meta.json, in dist\jellyfin-xtream_<ver>.zip (see docs/HANDOFF.md "Packaging")
+=======
+dotnet test  -c Release                                     # 609 tests; TreatWarningsAsErrors is on
+powershell -ExecutionPolicy Bypass -File scripts\Package.ps1   # publish + dist\jellyfin-xtream_<ver>.zip (dll + meta.json), prints MD5
+>>>>>>> feat/release
 powershell -ExecutionPolicy Bypass -File scripts\Install-Local.ps1 -EpgUrl https://mybunny.tv/epg.xml
 ```
+
+**Releases** come from `.github/workflows/release.yaml`: push a tag `v<version>` matching `build.yaml` and it tests,
+packages (same `scripts/Package.ps1`), attaches the zip to the GitHub release and merges the version into
+`https://bhargavz.github.io/Jellyfin.Xtream/repository.json` (`scripts/Update-RepositoryManifest.ps1`, deployed with
+GitHub Pages from Actions). Older versions are kept by fetching the published manifest first.
 
 `scripts/Install-Local.ps1` stops Jellyfin, then moves every old `Jellyfin Xtream_*` folder and the config into
 `.tmp\backup-<ts>\` (it never deletes them). It extracts the zip and sets the XMLTV guide only if none is configured yet,
