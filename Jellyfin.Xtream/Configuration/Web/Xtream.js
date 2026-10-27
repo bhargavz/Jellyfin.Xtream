@@ -5,11 +5,31 @@ const url = (name) =>
 const tab = (name) => '/configurationpage?name=' + name + '.html';
 
 $(document).ready(() => {
+  if (document.getElementById('XtreamStylesheet')) {
+    return;
+  }
   const style = document.createElement('link');
+  style.id = 'XtreamStylesheet';
   style.rel = 'stylesheet';
   style.href = url('Xtream.css')
   document.head.appendChild(style);
 });
+
+// Upstream #256: Jellyfin fires "viewshow" every time a cached settings page is shown again, and two
+// shows can overlap while the first one is still loading. Each render takes a token on its container,
+// and only the newest render may write to it, so a slower earlier load can't append a second copy.
+const beginRender = (element) => {
+  const token = String((Number(element.dataset.xtreamRender) || 0) + 1);
+  element.dataset.xtreamRender = token;
+  return () => element.dataset.xtreamRender === token;
+};
+
+// Parses an integer form field. Empty or invalid input falls back to the default; the result is never
+// below the minimum.
+const readInt = (input, min, fallback) => {
+  const value = Number.parseInt(String(input.value).trim(), 10);
+  return Math.max(min, Number.isNaN(value) ? fallback : value);
+};
 
 const htmlExpand = document.createElement('span');
 htmlExpand.ariaHidden = true;
@@ -151,14 +171,21 @@ const createCategoryRow = (wrapper, category, loadItems) => {
   return tr;
 };
 
+// Resolves with the editable selection, or with null when a newer render replaced this one.
 const populateCategoriesTable = (table, loadConfig, loadCategories, loadItems) => {
+  const isCurrent = beginRender(table);
+  table.replaceChildren();
   Dashboard.showLoadingMsg();
   const fetchConfig = loadConfig();
   const fetchCategories = loadCategories();
 
   return Promise.all([fetchConfig, fetchCategories])
     .then(([config, categories]) => {
-      const data = config;
+      if (!isCurrent()) {
+        return null;
+      }
+      table.replaceChildren();
+      const data = config ?? {};
       for (let i = 0; i < categories.length; ++i) {
         const category = categories[i];
         const wrapper = {
@@ -222,9 +249,11 @@ const pluginConfig = {
 };
 
 export default {
+  beginRender,
   fetchJson,
   filter,
   pluginConfig,
   populateCategoriesTable,
+  readInt,
   setTabs,
 }

@@ -1,4 +1,7 @@
 export default function (view) {
+  const EPG_REFRESH_MIN = 1;
+  const EPG_REFRESH_DEFAULT = 24;
+
   const createChannelRow = (channel, overrides) => {
     const tr = document.createElement('tr');
     tr.dataset['channelId'] = channel.Id;
@@ -66,25 +69,40 @@ export default function (view) {
     }
   };
 
-  view.addEventListener('viewshow', () => import(
+  const onViewShow = () => import(
     ApiClient.getUrl('web/ConfigurationPage', { name: 'Xtream.js' })
   ).then((Xtream) => Xtream.default
   ).then((Xtream) => {
     const pluginId = Xtream.pluginConfig.UniqueId;
     Xtream.setTabs(2);
+    const form = view.querySelector('#XtreamLiveOverridesForm');
+    // Nothing may be saved until this render's data has loaded.
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    const isCurrent = Xtream.beginRender(view);
     const table = view.querySelector('#LiveChannels');
-    table.innerHTML = '';
+    table.replaceChildren();
     const status = view.querySelector('#CustomEpgStatus');
     status.textContent = '';
+    const refreshHours = view.querySelector('#CustomEpgRefreshHours');
 
     Dashboard.showLoadingMsg();
     Promise.all([
       ApiClient.getPluginConfiguration(pluginId),
       Xtream.fetchJson('Xtream/LiveTv'),
     ]).then(([config, channels]) => {
+      // A newer show of this page took over; drop this result instead of appending a second copy (upstream #256).
+      if (!isCurrent()) {
+        return null;
+      }
       const data = config.LiveTvOverrides ?? {};
       view.querySelector('#EpgMode').value = config.EpgMode ?? 'Xtream';
       view.querySelector('#CustomEpgPath').value = config.CustomEpgPath ?? '';
+      refreshHours.value = config.CustomEpgRefreshHours > 0 ? config.CustomEpgRefreshHours : EPG_REFRESH_DEFAULT;
+
+      table.replaceChildren();
 
       for (const channel of channels) {
         data[channel.Id] ??= {};
@@ -96,6 +114,9 @@ export default function (view) {
         Promise.resolve([]);
 
       return epgPromise.then((epgChannels) => {
+        if (!isCurrent()) {
+          return null;
+        }
         populateEpgOptions(epgChannels);
         status.textContent = config.CustomEpgPath ?
           `Loaded ${epgChannels.length} XMLTV channels.` :
@@ -103,17 +124,26 @@ export default function (view) {
         return { config, data };
       }).catch((error) => {
         console.error('Unable to load XMLTV channels', error);
+        if (!isCurrent()) {
+          return null;
+        }
         status.textContent = 'The XMLTV channel list could not be loaded. Check the saved path and Jellyfin server permissions.';
         return { config, data };
       });
-    }).then(({ data }) => {
+    }).then((loaded) => {
+      if (loaded === null) {
+        return;
+      }
+      const { data } = loaded;
       Dashboard.hideLoadingMsg();
-      view.querySelector('#XtreamLiveOverridesForm').onsubmit = (e) => {
+      form.onsubmit = (e) => {
         e.preventDefault();
         Dashboard.showLoadingMsg();
         ApiClient.getPluginConfiguration(pluginId).then((config) => {
           config.EpgMode = view.querySelector('#EpgMode').value;
           config.CustomEpgPath = view.querySelector('#CustomEpgPath').value.trim();
+          config.CustomEpgRefreshHours = Xtream.readInt(refreshHours, EPG_REFRESH_MIN, EPG_REFRESH_DEFAULT);
+          refreshHours.value = config.CustomEpgRefreshHours;
           config.LiveTvOverrides = Xtream.filter(
             data,
             overrides => Object.keys(overrides).length > 0
@@ -127,7 +157,15 @@ export default function (view) {
     }).catch((error) => {
       console.error(error);
       Dashboard.hideLoadingMsg();
-      status.textContent = 'Unable to load the TV Overrides page.';
+      if (isCurrent()) {
+        status.textContent = 'Unable to load the TV Overrides page.';
+      }
     });
-  }));
+  });
+
+  // The controller can be invoked more than once for the same cached view; bind viewshow only once.
+  if (view.dataset.xtreamInit !== 'true') {
+    view.dataset.xtreamInit = 'true';
+    view.addEventListener('viewshow', onViewShow);
+  }
 }

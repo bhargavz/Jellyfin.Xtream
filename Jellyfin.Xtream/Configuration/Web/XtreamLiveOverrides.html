@@ -1,4 +1,4 @@
-<div id="XtreamLivePage" data-role="page" class="page type-interior pluginConfigurationPage withTabs"
+<div id="XtreamLiveOverridesPage" data-role="page" class="page type-interior pluginConfigurationPage withTabs"
   data-require="emby-input,emby-button,emby-select" data-controller="__plugin/XtreamLiveOverrides.js">
   <div data-role="content">
     <div class="content-primary">
@@ -20,8 +20,14 @@
         <div class="inputContainer">
           <label class="inputLabel inputLabelUnfocused" for="CustomEpgPath">XMLTV file path or URL</label>
           <input is="emby-input" type="text" id="CustomEpgPath" placeholder="https://example.com/epg.xml or D:\EPG\guide.xml" />
-          <div class="fieldDescription">Enter an http(s) URL (downloaded and cached for a day, gzip supported) or a local path that the Jellyfin server process can read. Channels are matched automatically by the provider's EPG id, then by name; set an XMLTV id below only to correct a match. Save once after changing this path, then reopen TV Overrides so the channel-id suggestions can be loaded.</div>
+          <div class="fieldDescription">Enter an http(s) URL (downloaded and cached for the refresh interval below, gzip supported) or a local path that the Jellyfin server process can read. Channels are matched automatically by the provider's EPG id, then by name; set an XMLTV id below only to correct a match. Save once after changing this path, then reopen TV Overrides so the channel-id suggestions can be loaded.</div>
           <div class="fieldDescription" id="CustomEpgStatus"></div>
+        </div>
+
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="CustomEpgRefreshHours">XMLTV refresh interval (hours)</label>
+          <input is="emby-input" id="CustomEpgRefreshHours" type="number" min="1" step="1" />
+          <div class="fieldDescription">How long a downloaded XMLTV guide is reused before it is fetched again. Applies to URLs only. Minimum 1, default 24.</div>
         </div>
 
         <datalist id="XmlTvChannelOptions"></datalist>

@@ -1,5 +1,5 @@
 export default function (view) {
-  view.addEventListener("viewshow", () => import(
+  const onViewShow = () => import(
     ApiClient.getUrl("web/ConfigurationPage", {
       name: "Xtream.js",
     })
@@ -8,16 +8,25 @@ export default function (view) {
     const pluginId = Xtream.pluginConfig.UniqueId;
     Xtream.setTabs(5);
 
+    const isCurrent = Xtream.beginRender(view);
     const getConfig = ApiClient.getPluginConfiguration(pluginId);
     const channelInputs = view.querySelectorAll('.channel-image');
-    getConfig.then((config) => channelInputs.forEach((input) => {
-      input.value = config.ChannelImages[input.dataset.key] ?? '';
-    }));
+    getConfig.then((config) => {
+      if (isCurrent()) {
+        channelInputs.forEach((input) => {
+          input.value = config.ChannelImages?.[input.dataset.key] ?? '';
+        });
+      }
+    });
 
     const populate = (table, type, selected, fetchCategories) => Promise.all([getConfig, fetchCategories()])
       .then(([config, categories]) => {
-        table.innerHTML = '';
-        const keys = Object.keys(selected(config));
+        // Only the newest render may fill the table (upstream #256).
+        if (!isCurrent()) {
+          return;
+        }
+        table.replaceChildren();
+        const keys = Object.keys(selected(config) ?? {});
         categories
           .filter((category) => keys.includes(String(category.Id)))
           .forEach((category) => {
@@ -32,7 +41,7 @@ export default function (view) {
             input.type = 'text';
             input.dataset.key = `${type}:${category.Id}`;
             input.classList.add('category-image');
-            input.value = config.CategoryImages[input.dataset.key] ?? '';
+            input.value = config.CategoryImages?.[input.dataset.key] ?? '';
             td.appendChild(input);
             tr.appendChild(td);
             table.appendChild(tr);
@@ -48,19 +57,26 @@ export default function (view) {
       .filter((input) => input.value.trim().length > 0)
       .reduce((res, input) => (res[input.dataset.key] = input.value.trim(), res), {});
 
-    view.querySelector('#XtreamImagesForm').addEventListener('submit', (e) => {
+    // Assigned, not added with addEventListener, so a page shown again doesn't save once per earlier show.
+    view.querySelector('#XtreamImagesForm').onsubmit = (e) => {
+      e.preventDefault();
       Dashboard.showLoadingMsg();
 
       ApiClient.getPluginConfiguration(pluginId).then((config) => {
         config.ChannelImages = collect('.channel-image');
         config.CategoryImages = collect('.category-image');
-        ApiClient.updatePluginConfiguration(pluginId, config).then((result) => {
-          Dashboard.processPluginConfigurationUpdateResult(result);
-        });
+        return ApiClient.updatePluginConfiguration(pluginId, config);
+      }).then((result) => {
+        Dashboard.processPluginConfigurationUpdateResult(result);
       });
 
-      e.preventDefault();
       return false;
-    });
-  }));
+    };
+  });
+
+  // The controller can be invoked more than once for the same cached view; bind viewshow only once.
+  if (view.dataset.xtreamInit !== 'true') {
+    view.dataset.xtreamInit = 'true';
+    view.addEventListener('viewshow', onViewShow);
+  }
 }
