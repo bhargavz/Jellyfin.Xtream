@@ -138,6 +138,8 @@ export default function (view) {
       const data = config.LiveTvOverrides ?? {};
       view.querySelector('#EpgMode').value = config.EpgMode ?? 'Xtream';
       view.querySelector('#CustomEpgPath').value = config.CustomEpgPath ?? '';
+      view.querySelector('#FallbackEpgUrls').value = config.FallbackEpgUrls ?? '';
+      const hasXmlTv = Boolean(config.CustomEpgPath || (config.FallbackEpgUrls ?? '').trim());
       refreshHours.value = config.CustomEpgRefreshHours > 0 ? config.CustomEpgRefreshHours : EPG_REFRESH_DEFAULT;
 
       table.replaceChildren();
@@ -147,7 +149,7 @@ export default function (view) {
         table.appendChild(createChannelRow(channel, data[channel.Id]));
       }
 
-      const epgPromise = config.CustomEpgPath ?
+      const epgPromise = hasXmlTv ?
         Xtream.fetchJson('Xtream/CustomEpg/Channels') :
         Promise.resolve([]);
 
@@ -156,7 +158,7 @@ export default function (view) {
           return null;
         }
         populateEpgOptions(epgChannels);
-        status.textContent = config.CustomEpgPath ?
+        status.textContent = hasXmlTv ?
           `Loaded ${epgChannels.length} XMLTV channels.` :
           'Set an XMLTV path and save to load channel-id suggestions.';
         return { config, data };
@@ -180,6 +182,7 @@ export default function (view) {
         ApiClient.getPluginConfiguration(pluginId).then((config) => {
           config.EpgMode = view.querySelector('#EpgMode').value;
           config.CustomEpgPath = view.querySelector('#CustomEpgPath').value.trim();
+          config.FallbackEpgUrls = view.querySelector('#FallbackEpgUrls').value.trim();
           config.CustomEpgRefreshHours = Xtream.readInt(refreshHours, EPG_REFRESH_MIN, EPG_REFRESH_DEFAULT);
           refreshHours.value = config.CustomEpgRefreshHours;
           config.LiveTvOverrides = Xtream.filter(

@@ -1,5 +1,5 @@
 <div id="XtreamLiveOverridesPage" data-role="page" class="page type-interior pluginConfigurationPage withTabs"
-  data-require="emby-input,emby-button,emby-select" data-controller="__plugin/XtreamLiveOverrides.js">
+  data-require="emby-input,emby-button,emby-select,emby-textarea" data-controller="__plugin/XtreamLiveOverrides.js">
   <div data-role="content">
     <div class="content-primary">
       <form id="XtreamLiveOverridesForm">
@@ -22,6 +22,12 @@
           <input is="emby-input" type="text" id="CustomEpgPath" placeholder="https://example.com/epg.xml or D:\EPG\guide.xml" />
           <div class="fieldDescription">Enter an http(s) URL (downloaded and cached for the refresh interval below, gzip supported) or a local path that the Jellyfin server process can read. Channels are matched automatically by the provider's EPG id, then by name; set an XMLTV id below only to correct a match. Save once after changing this path, then reopen TV Overrides so the channel-id suggestions can be loaded.</div>
           <div class="fieldDescription" id="CustomEpgStatus"></div>
+        </div>
+
+        <div class="inputContainer">
+          <label class="textareaLabel" for="FallbackEpgUrls">Fallback XMLTV URLs (one per line)</label>
+          <textarea is="emby-textarea" id="FallbackEpgUrls" rows="4" placeholder="https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz"></textarea>
+          <div class="fieldDescription">Extra XMLTV guides (http(s) URLs or local paths), tried in order after the path above. Each one only fills in channels that no earlier guide covers; a channel keeps the first guide that matched it. Each URL is cached separately, re-checked on the refresh interval with a conditional request, and kept if a refresh fails. Lines starting with # are ignored. If a site's https address is blocked, try its http:// address.</div>
         </div>
 
         <div class="inputContainer">

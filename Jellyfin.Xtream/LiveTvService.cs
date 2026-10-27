@@ -172,20 +172,15 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
         if (customOnly || customWithFallback)
         {
-            if (!string.IsNullOrWhiteSpace(plugin.Configuration.CustomEpgPath))
+            IReadOnlyList<string> fallbackSources = XmlTvGuideService.ParseSourceList(plugin.Configuration.FallbackEpgUrls);
+            if (!string.IsNullOrWhiteSpace(plugin.Configuration.CustomEpgPath) || fallbackSources.Count > 0)
             {
                 try
                 {
-                    string path = await XmlTvGuideService.ResolveSourceAsync(
-                        plugin.Configuration.CustomEpgPath,
-                        httpClientFactory,
-                        Path.Join(plugin.DataFolderPath, "epg-cache"),
-                        plugin.Configuration.CustomEpgRefreshHours,
-                        logger,
-                        cancellationToken).ConfigureAwait(false);
+                    List<XmlTvSource> sources = await ResolveGuideSources(fallbackSources, cancellationToken).ConfigureAwait(false);
                     IReadOnlyCollection<XmlTvChannelKey> keys = await GetGuideKeys(cancellationToken).ConfigureAwait(false);
-                    List<ProgramInfo>? customPrograms = XmlTvGuideService.GetPrograms(
-                        path,
+                    List<ProgramInfo>? customPrograms = sources.Count == 0 ? null : XmlTvGuideService.GetPrograms(
+                        sources,
                         keys,
                         logger,
                         streamId,
@@ -246,6 +241,55 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                select epg;
     }
 
+    /// <summary>
+    /// Resolves the custom XMLTV path (errors propagate) and then each fallback source (errors are logged and the
+    /// source is skipped) to local files, in priority order.
+    /// </summary>
+    private async Task<List<XmlTvSource>> ResolveGuideSources(IReadOnlyList<string> fallbackSources, CancellationToken cancellationToken)
+    {
+        Plugin plugin = Plugin.Instance;
+        string cacheFolder = Path.Join(plugin.DataFolderPath, "epg-cache");
+        List<XmlTvSource> sources = [];
+        string primary = plugin.Configuration.CustomEpgPath;
+        if (!string.IsNullOrWhiteSpace(primary))
+        {
+            string path = await XmlTvGuideService.ResolveSourceAsync(
+                primary,
+                httpClientFactory,
+                cacheFolder,
+                plugin.Configuration.CustomEpgRefreshHours,
+                logger,
+                cancellationToken).ConfigureAwait(false);
+            sources.Add(new XmlTvSource(path, XmlTvGuideService.GetSourceLabel(primary)));
+        }
+
+        foreach (string fallback in fallbackSources)
+        {
+            if (string.Equals(fallback, primary?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                string path = await XmlTvGuideService.ResolveSourceAsync(
+                    fallback,
+                    httpClientFactory,
+                    cacheFolder,
+                    plugin.Configuration.CustomEpgRefreshHours,
+                    logger,
+                    cancellationToken).ConfigureAwait(false);
+                sources.Add(new XmlTvSource(path, XmlTvGuideService.GetSourceLabel(fallback)));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(exception, "Fallback XMLTV source {Source} is unavailable and is skipped", XmlTvGuideService.GetSourceLabel(fallback));
+            }
+        }
+
+        return sources;
+    }
+
     private async Task<IReadOnlyCollection<XmlTvChannelKey>> GetGuideKeys(CancellationToken cancellationToken)
     {
         Plugin plugin = Plugin.Instance;
@@ -255,12 +299,27 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return keys;
         }
 
+        // Category names give the name matcher a country hint ("US| News"); without them it still works.
+        Dictionary<int, string> categories = [];
+        try
+        {
+            foreach (Category category in await xtreamClient.GetLiveCategoryAsync(plugin.Creds, cancellationToken).ConfigureAwait(false))
+            {
+                categories[category.CategoryId] = category.CategoryName;
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "Unable to load live categories for XMLTV name matching");
+        }
+
         keys = (await plugin.StreamService.GetLiveStreamsWithOverrides(cancellationToken).ConfigureAwait(false))
             .Select(stream => new XmlTvChannelKey(
                 stream.StreamId,
                 plugin.Configuration.LiveTvOverrides.TryGetValue(stream.StreamId, out Configuration.ChannelOverrides? overrides) ? overrides.EpgId : null,
                 stream.EpgChannelId,
-                StreamService.ParseName(stream.Name).Title))
+                StreamService.ParseName(stream.Name).Title,
+                stream.CategoryId is int categoryId ? categories.GetValueOrDefault(categoryId) : null))
             .ToList();
         memoryCache.Set(key, keys, DateTimeOffset.Now.AddHours(1));
         return keys;
