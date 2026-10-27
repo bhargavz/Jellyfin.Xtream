@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -169,31 +170,36 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
         if (customOnly || customWithFallback)
         {
-            string? epgId = null;
-            if (plugin.Configuration.LiveTvOverrides.TryGetValue(streamId, out Configuration.ChannelOverrides? channelOverrides))
-            {
-                epgId = channelOverrides.EpgId;
-            }
-
-            if (!string.IsNullOrWhiteSpace(plugin.Configuration.CustomEpgPath) && !string.IsNullOrWhiteSpace(epgId))
+            if (!string.IsNullOrWhiteSpace(plugin.Configuration.CustomEpgPath))
             {
                 try
                 {
-                    List<ProgramInfo> customPrograms = XmlTvGuideService.GetPrograms(
+                    string path = await XmlTvGuideService.ResolveSourceAsync(
                         plugin.Configuration.CustomEpgPath,
-                        epgId,
+                        httpClientFactory,
+                        Path.Join(plugin.DataFolderPath, "epg-cache"),
+                        plugin.Configuration.CustomEpgRefreshHours,
+                        logger,
+                        cancellationToken).ConfigureAwait(false);
+                    IReadOnlyCollection<XmlTvChannelKey> keys = await GetGuideKeys(cancellationToken).ConfigureAwait(false);
+                    List<ProgramInfo>? customPrograms = XmlTvGuideService.GetPrograms(
+                        path,
+                        keys,
+                        logger,
+                        streamId,
                         channelId,
                         startDateUtc,
-                        endDateUtc).ToList();
+                        endDateUtc)?.ToList();
 
-                    if (customOnly || customPrograms.Count > 0)
+                    // Channels covered by the XMLTV guide skip the per-channel Xtream EPG call (upstream #188).
+                    if (customOnly || customPrograms is { Count: > 0 })
                     {
-                        return customPrograms;
+                        return customPrograms ?? [];
                     }
                 }
-                catch (Exception exception)
+                catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    logger.LogError(exception, "Unable to load custom XMLTV guide data for stream {StreamId} mapped to {EpgId}", streamId, epgId);
+                    logger.LogError(exception, "Unable to load custom XMLTV guide data for stream {StreamId}", streamId);
                     if (customOnly)
                     {
                         return [];
@@ -235,6 +241,26 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         return from epg in items
                where epg.EndDate >= startDateUtc && epg.StartDate < endDateUtc
                select epg;
+    }
+
+    private async Task<IReadOnlyCollection<XmlTvChannelKey>> GetGuideKeys(CancellationToken cancellationToken)
+    {
+        Plugin plugin = Plugin.Instance;
+        string key = $"xtream-guide-keys-{plugin.DataVersion}";
+        if (memoryCache.TryGetValue(key, out IReadOnlyCollection<XmlTvChannelKey>? keys) && keys is not null)
+        {
+            return keys;
+        }
+
+        keys = (await plugin.StreamService.GetLiveStreamsWithOverrides(cancellationToken).ConfigureAwait(false))
+            .Select(stream => new XmlTvChannelKey(
+                stream.StreamId,
+                plugin.Configuration.LiveTvOverrides.TryGetValue(stream.StreamId, out Configuration.ChannelOverrides? overrides) ? overrides.EpgId : null,
+                stream.EpgChannelId,
+                StreamService.ParseName(stream.Name).Title))
+            .ToList();
+        memoryCache.Set(key, keys, DateTimeOffset.Now.AddHours(1));
+        return keys;
     }
 
     /// <inheritdoc />

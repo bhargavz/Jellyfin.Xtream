@@ -45,6 +45,27 @@ public class XtreamClient(HttpClient client, ILogger<XtreamClient> logger) : IDi
         Error = NullableEventHandler(logger),
     };
 
+    /// <summary>
+    /// Applies the configured API timeout. Only possible before the first request is sent.
+    /// </summary>
+    public void UpdateTimeout()
+    {
+        int seconds = Plugin.Instance.Configuration.ApiTimeoutSeconds;
+        if (seconds <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            client.Timeout = TimeSpan.FromSeconds(seconds);
+        }
+        catch (InvalidOperationException)
+        {
+            logger.LogInformation("The Xtream API timeout change applies after Jellyfin restarts");
+        }
+    }
+
     public void UpdateUserAgent()
     {
         client.DefaultRequestHeaders.UserAgent.Clear();

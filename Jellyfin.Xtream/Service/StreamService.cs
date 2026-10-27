@@ -204,7 +204,9 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
 
         IEnumerable<StreamInfo> streams = await xtreamClient.GetLiveStreamsAsync(Plugin.Instance.Creds, cancellationToken).ConfigureAwait(false);
         return WithUsableIds(streams, (StreamInfo channel) => channel.StreamId, "live channel")
-            .Where((StreamInfo channel) => channel.CategoryId.HasValue && IsConfigured(config.LiveTv, channel.CategoryId.Value, channel.StreamId));
+            .Where((StreamInfo channel) => channel.CategoryId.HasValue && IsConfigured(config.LiveTv, channel.CategoryId.Value, channel.StreamId))
+            // Some providers list the same stream in several categories; Jellyfin needs one channel per id.
+            .DistinctBy((StreamInfo channel) => channel.StreamId);
     }
 
     /// <summary>

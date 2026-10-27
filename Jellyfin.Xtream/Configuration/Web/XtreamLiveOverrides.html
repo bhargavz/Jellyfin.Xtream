@@ -18,9 +18,9 @@
         </div>
 
         <div class="inputContainer">
-          <label class="inputLabel inputLabelUnfocused" for="CustomEpgPath">XMLTV file path</label>
-          <input is="emby-input" type="text" id="CustomEpgPath" placeholder="D:\Jellyfin Scripts\EPG\epg123.xmltv" />
-          <div class="fieldDescription">Enter a local path that the Jellyfin server process can read. Save once after changing this path, then reopen TV Overrides so the channel-id suggestions can be loaded.</div>
+          <label class="inputLabel inputLabelUnfocused" for="CustomEpgPath">XMLTV file path or URL</label>
+          <input is="emby-input" type="text" id="CustomEpgPath" placeholder="https://example.com/epg.xml or D:\EPG\guide.xml" />
+          <div class="fieldDescription">Enter an http(s) URL (downloaded and cached for a day, gzip supported) or a local path that the Jellyfin server process can read. Channels are matched automatically by the provider's EPG id, then by name; set an XMLTV id below only to correct a match. Save once after changing this path, then reopen TV Overrides so the channel-id suggestions can be loaded.</div>
           <div class="fieldDescription" id="CustomEpgStatus"></div>
         </div>
 

@@ -55,6 +55,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         XtreamClient = xtreamClient;
         if (XtreamClient is XtreamClient client)
         {
+            client.UpdateTimeout();
             client.UpdateUserAgent();
         }
 

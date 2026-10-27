@@ -51,9 +51,20 @@ public class PluginConfiguration : BasePluginConfiguration
     public string EpgMode { get; set; } = "Xtream";
 
     /// <summary>
-    /// Gets or sets the local XMLTV file used by custom guide modes.
+    /// Gets or sets the XMLTV source used by custom guide modes: a local file path or an http(s) URL.
     /// </summary>
     public string CustomEpgPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets how many hours a downloaded XMLTV guide is reused before it is fetched again.
+    /// </summary>
+    public int CustomEpgRefreshHours { get; set; } = 24;
+
+    /// <summary>
+    /// Gets or sets the timeout of Xtream API calls in seconds. Large providers need more than the 100 second default.
+    /// Applied when Jellyfin starts.
+    /// </summary>
+    public int ApiTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
     /// Gets or sets a value indicating whether the Catch-up channel is visible.

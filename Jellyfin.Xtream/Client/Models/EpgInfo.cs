@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using System;
+using System.Globalization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 
@@ -22,8 +23,35 @@ namespace Jellyfin.Xtream.Client.Models;
 
 public class EpgInfo
 {
+    // Kept as text: some providers (e.g. MyBunny) send hex ids like "6ae0d9df220c7", which used to parse as 0 and
+    // give every programme of a channel the same GUID.
     [JsonProperty("id")]
-    public int Id { get; set; }
+    public string RawId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets a stable 32-bit id for GUID building: the numeric id when it fits, otherwise an FNV-1a hash of the text,
+    /// or of the start timestamp when the provider sent no id.
+    /// </summary>
+    [JsonIgnore]
+    public int Id
+    {
+        get
+        {
+            if (int.TryParse(RawId, NumberStyles.Integer, CultureInfo.InvariantCulture, out int id))
+            {
+                return id;
+            }
+
+            string text = string.IsNullOrEmpty(RawId) ? Start.Ticks.ToString(CultureInfo.InvariantCulture) : RawId;
+            uint hash = 2166136261;
+            foreach (char c in text)
+            {
+                hash = unchecked((hash ^ c) * 16777619);
+            }
+
+            return unchecked((int)hash);
+        }
+    }
 
     [JsonProperty("epg_id")]
     public int EpgId { get; set; }
@@ -39,8 +67,15 @@ public class EpgInfo
     [JsonProperty("start_timestamp")]
     public DateTime Start { get; set; }
 
+    // Kept as text: providers send this in arbitrary local formats (upstream #271); only the timestamps are used.
     [JsonProperty("start")]
-    public DateTime StartLocalTime { get; set; }
+    public string StartLocalTime { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets the provider-local start time used to build catch-up URLs, falling back to the UTC start when unparseable.
+    /// </summary>
+    [JsonIgnore]
+    public DateTime StartLocal => DateTime.TryParse(StartLocalTime, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime local) ? local : Start;
 
     [JsonConverter(typeof(UnixDateTimeConverter))]
     [JsonProperty("stop_timestamp")]

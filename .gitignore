@@ -4,3 +4,8 @@ obj/
 .idea/
 .vscode/
 artifacts
+
+# local
+.env
+.tmp/
+dist/

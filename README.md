@@ -7,6 +7,9 @@
 The Jellyfin.Xtream plugin can be used to integrate the content provided by an [Xtream-compatible API](https://xtream-ui.org/api-xtreamui-xtreamcode/) in your [Jellyfin](https://jellyfin.org/) instance.
 
 > [!NOTE]
+> **bhargavz fork:** builds on vandernorth's fork below. It adds XMLTV guides from a URL with automatic channel
+> matching, removes duplicate streams and adds a configurable API timeout. See `AGENTS.md` and `docs/HANDOFF.md`.
+>
 > This is a fork of [Kevinjil/Jellyfin.Xtream](https://github.com/Kevinjil/Jellyfin.Xtream) that combines open upstream pull requests:
 > - [#301](https://github.com/Kevinjil/Jellyfin.Xtream/pull/301) Jellyfin 12 support
 > - [#302](https://github.com/Kevinjil/Jellyfin.Xtream/pull/302) Fixes for series, seasons and movies with unexpected provider data
