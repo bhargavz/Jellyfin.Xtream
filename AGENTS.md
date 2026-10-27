@@ -22,7 +22,7 @@ next steps.
 ```powershell
 $env:PATH = 'C:\Program Files\dotnet;' + $env:PATH          # .NET SDK 10.0.403 (installed 2026-10-26 via winget)
 dotnet build -c Release
-dotnet test  -c Release                                     # 609 tests; TreatWarningsAsErrors is on
+dotnet test  -c Release                                     # 628 tests; TreatWarningsAsErrors is on
 dotnet publish Jellyfin.Xtream\Jellyfin.Xtream.csproj -c Release -o .tmp\publish-<ver>
 # zip = Jellyfin.Xtream.dll + meta.json, in dist\jellyfin-xtream_<ver>.zip (see docs/HANDOFF.md "Packaging")
 powershell -ExecutionPolicy Bypass -File scripts\Install-Local.ps1 -EpgUrl https://mybunny.tv/epg.xml
@@ -56,11 +56,53 @@ every name-based match.
 | `PluginServiceRegistrator.cs` | DI: `ILiveTvService` (LiveTvService), `IChannel`s (VOD/Series/Catchup) |
 | `LiveTvService.cs` | Channels, guide (`GetProgramsAsync`: custom XMLTV → Xtream fallback), live streams via `Restream` |
 | `Service/StreamService.cs` | Category filtering, overrides, dedupe by stream_id, GUID id encoding, media sources |
+| `Service/GuideDeduplication.cs` | Drops duplicate channel/programme ids before Jellyfin saves them, logs the provider ids (#242) |
+| `Service/EpgShift.cs` | Per-channel guide time shift (`ChannelOverrides.EpgShiftMinutes`, TV Overrides "EPG shift" column; #217) |
 | `Service/XmlTvGuideService.cs` | XMLTV from a file or URL (download cache, gzip), streaming parse, channel matching, programme filtering |
 | `Service/Restream.cs` | One upstream connection shared by every Jellyfin consumer of the same channel |
 | `Client/XtreamClient.cs` | `player_api.php` calls; JSON error tolerance (#302) |
 | `Api/CustomEpgController.cs` | `GET /Xtream/CustomEpg/Channels`: lists XMLTV channels for the overrides UI |
 | `Configuration/Web/*` | Settings pages (embedded resources) |
+
+## Troubleshooting: "UNIQUE constraint failed" on Refresh Guide (upstream #242)
+
+**Symptom:** channels or programmes go missing, and the Jellyfin log shows
+`SQLite Error 19: 'UNIQUE constraint failed: BaseItemProviders.ItemId, BaseItemProviders.ProviderId'` (or another
+`UNIQUE constraint failed: ...`) followed by `Jellyfin.LiveTv.Guide.GuideManager: Error getting channel information for "<name>"`.
+
+**Cause:** Jellyfin, not the plugin, writes these rows, and it catches the exception itself, so plugin code never sees
+the failure. The usual trigger is stale rows from an earlier aborted or failed guide refresh. The plugin's part:
+it never returns duplicate channel or programme ids (`GuideDeduplication`; duplicate stream_ids are already merged in
+`StreamService.GetLiveStreams`). If the provider sends duplicates, the plugin logs a `Dropped N duplicate ... id(s)`
+warning that names the provider stream id and the dropped ids. Search the log for `Dropped` to see whether the plugin
+was involved.
+
+**Remedy 1 (no SQL):** in plugin settings, untick every Live TV category, Save, and run Scheduled Tasks → Refresh
+Guide. Jellyfin then removes the plugin's channels. Tick the categories again, Save, and run Refresh Guide again. This
+loses per-channel user data such as favourites.
+
+**Remedy 2 (SQL, removes orphaned provider rows):** use this only if remedy 1 doesn't help.
+1. **Stop Jellyfin** (tray app → Quit; check that no `jellyfin.exe` is left running).
+2. **Back up the DB**: copy `C:\ProgramData\Jellyfin\Server\data\jellyfin.db` and any `jellyfin.db-wal` / `jellyfin.db-shm`
+   next to it into a dated backup folder.
+3. Inspect, then delete, with the `sqlite3` CLI:
+   ```sql
+   -- provider rows of the plugin's items whose item no longer exists
+   SELECT COUNT(*) FROM BaseItemProviders
+    WHERE ProviderValue = 'Xtream Live' AND ItemId NOT IN (SELECT Id FROM BaseItems);
+   DELETE FROM BaseItemProviders
+    WHERE ProviderValue = 'Xtream Live' AND ItemId NOT IN (SELECT Id FROM BaseItems);
+   ```
+4. Start Jellyfin and run Refresh Guide.
+
+**What was verified (2026-10-27):** the table and column names come from the Jellyfin 12.0.0
+`Jellyfin.Database.Implementations` package. `JellyfinDbContext` has `BaseItems` (`BaseItemEntity`, key `Id`) and
+`BaseItemProviders` (`ItemId`, `ProviderId`, `ProviderValue`, key `{ItemId, ProviderId}`), and neither sets a custom
+table name. `'Xtream Live'` is this plugin's `ILiveTvService.Name`, which Jellyfin stores as the provider value of
+Live TV items (the query in the upstream issue does the same). **Not verified:** the `ProviderId` key name (believed
+to be `ExternalServiceId`), and the query was never run against a real 12.x database. It deletes only provider rows
+whose item no longer exists. If a constraint other than `BaseItemProviders` fails, don't improvise deletes on
+`BaseItems`; restore the backup and use remedy 1.
 
 ## MyBunny.TV facts (checked 2026-10-26; don't re-derive)
 

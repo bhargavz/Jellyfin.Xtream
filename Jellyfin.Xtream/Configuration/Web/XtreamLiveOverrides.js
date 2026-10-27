@@ -52,6 +52,44 @@ export default function (view) {
     td.appendChild(epg);
     tr.appendChild(td);
 
+    // Per-channel guide time shift (upstream #217), stored as EpgShiftMinutes.
+    td = document.createElement('td');
+    const shiftTotal = overrides.EpgShiftMinutes ?? 0;
+    const shiftHours = document.createElement('input');
+    shiftHours.type = 'number';
+    shiftHours.setAttribute('is', 'emby-input');
+    shiftHours.min = '-24';
+    shiftHours.max = '24';
+    shiftHours.step = '1';
+    shiftHours.placeholder = 'h';
+    shiftHours.title = 'Guide shift, hours (negative = earlier)';
+    shiftHours.value = shiftTotal ? Math.trunc(shiftTotal / 60) : '';
+    const shiftMinutes = document.createElement('input');
+    shiftMinutes.type = 'number';
+    shiftMinutes.setAttribute('is', 'emby-input');
+    shiftMinutes.min = '-59';
+    shiftMinutes.max = '59';
+    shiftMinutes.step = '1';
+    shiftMinutes.placeholder = 'min';
+    shiftMinutes.title = 'Guide shift, minutes';
+    shiftMinutes.value = shiftTotal % 60 ? Math.abs(shiftTotal % 60) * (Math.abs(shiftTotal) < 60 ? Math.sign(shiftTotal) : 1) : '';
+    const updateShift = () => {
+      const hours = parseInt(shiftHours.value, 10) || 0;
+      const minutes = parseInt(shiftMinutes.value, 10) || 0;
+      // The sign of the hours applies to the minutes too: -1 h 30 min means -90 minutes.
+      const total = hours !== 0 ? hours * 60 + Math.sign(hours) * Math.abs(minutes) : minutes;
+      if (total) {
+        overrides.EpgShiftMinutes = Math.max(-1440, Math.min(1440, total));
+      } else {
+        delete overrides.EpgShiftMinutes;
+      }
+    };
+    shiftHours.onchange = updateShift;
+    shiftMinutes.onchange = updateShift;
+    td.appendChild(shiftHours);
+    td.appendChild(shiftMinutes);
+    tr.appendChild(td);
+
     return tr;
   };
 

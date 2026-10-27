@@ -39,4 +39,10 @@ public class ChannelOverrides
     /// Gets or sets the mapped XMLTV channel id used for custom guide data.
     /// </summary>
     public string? EpgId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the guide time shift for this channel, in minutes (negative moves programmes earlier).
+    /// Null or 0 leaves the times unchanged. Applies to Xtream EPG, XMLTV and catch-up listings.
+    /// </summary>
+    public int? EpgShiftMinutes { get; set; }
 }
