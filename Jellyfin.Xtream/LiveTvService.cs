@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -45,6 +46,8 @@ namespace Jellyfin.Xtream;
 /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
 public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient) : ILiveTvService, ISupportsDirectStreamProvider
 {
+    private readonly ConcurrentDictionary<int, string> _channelNames = new();
+
     /// <inheritdoc />
     public string Name => "Xtream Live";
 
@@ -59,6 +62,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         foreach (StreamInfo channel in await plugin.StreamService.GetLiveStreamsWithOverrides(cancellationToken).ConfigureAwait(false))
         {
             ParsedName parsed = StreamService.ParseName(channel.Name);
+            _channelNames[channel.StreamId] = parsed.Title;
             items.Add(new ChannelInfo()
             {
                 Id = StreamService.ToGuid(StreamService.LiveTvPrefix, channel.StreamId, 0, 0).ToString(),
@@ -137,6 +141,13 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     public Task CloseLiveStream(string id, CancellationToken cancellationToken)
     {
         logger.LogInformation("Closing livestream {ChannelId}", id);
+
+        // Restream slots are keyed by the restream's unique id; release any that is still held for it.
+        if (Plugin.Instance.StreamLimiter.Release(id) > 0)
+        {
+            logger.LogInformation("Released the Xtream stream slot of livestream {ChannelId}", id);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -253,6 +264,11 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         }
 
         keys = (await plugin.StreamService.GetLiveStreamsWithOverrides(cancellationToken).ConfigureAwait(false))
+            .Select(stream =>
+            {
+                _channelNames[stream.StreamId] = StreamService.ParseName(stream.Name).Title;
+                return stream;
+            })
             .Select(stream => new XmlTvChannelKey(
                 stream.StreamId,
                 plugin.Configuration.LiveTvOverrides.TryGetValue(stream.StreamId, out Configuration.ChannelOverrides? overrides) ? overrides.EpgId : null,
@@ -284,11 +300,60 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == Restream.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
         if (stream == null)
         {
-            stream = new Restream(appHost, httpClientFactory, logger, mediaSourceInfo);
-            await stream.Open(cancellationToken).ConfigureAwait(false);
+            // Only a new upstream connection counts towards the limit; sharing an existing restream does not.
+            Restream restream = new Restream(appHost, httpClientFactory, logger, mediaSourceInfo, (uniqueId, ct) => AcquireConnectionAsync(uniqueId, channel, ct));
+            try
+            {
+                await restream.Open(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                restream.Dispose();
+                throw;
+            }
+
+            stream = restream;
         }
 
         stream.ConsumerCount++;
         return stream;
+    }
+
+    private async Task<IDisposable> AcquireConnectionAsync(string uniqueId, int streamId, CancellationToken cancellationToken)
+    {
+        Plugin plugin = Plugin.Instance;
+        int configured = plugin.Configuration.MaxConcurrentStreams;
+        int? providerMax = null;
+        if (configured <= 0)
+        {
+            try
+            {
+                // Don't hold up playback on a slow player_api call; the lookup keeps running and is cached.
+                providerMax = await plugin.ProviderConnectionLimit.GetAsync(plugin.DataVersion, cancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                logger.LogWarning("Provider max_connections lookup is slow; opening the stream without a limit");
+            }
+        }
+
+        int limit = StreamLimiter.ResolveLimit(configured, providerMax);
+        string name = _channelNames.TryGetValue(streamId, out string? title) ? title : $"channel {streamId}";
+
+        if (plugin.StreamLimiter.TryAcquire(uniqueId, name, limit, out IDisposable? lease, out IReadOnlyList<string> inUse))
+        {
+            logger.LogDebug("Xtream stream slot taken for {Channel} ({Count} of {Limit} in use)", name, inUse.Count, limit);
+            return lease!;
+        }
+
+        logger.LogInformation(
+            "Xtream stream limit blocked {Channel}: {Count} of {Limit} in use ({InUse})",
+            name,
+            inUse.Count,
+            limit,
+            string.Join(", ", inUse));
+        throw new StreamLimitReachedException(limit, inUse);
     }
 }

@@ -50,6 +50,7 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _tokenSource;
+    private readonly UpstreamConnectionSlot _connectionSlot;
     private readonly string _url;
 
     private Task? _copyTask;
@@ -62,7 +63,15 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
     /// <param name="mediaSource">The media which must be restreamed.</param>
-    public Restream(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger logger, MediaSourceInfo mediaSource)
+    /// <param name="acquireConnection">Reserves a concurrent-stream slot before the upstream connection is opened
+    /// (see <see cref="StreamLimiter"/>). It receives the <see cref="UniqueId"/> and throws
+    /// <see cref="StreamLimitReachedException"/> when the limit is reached. Null disables limiting.</param>
+    public Restream(
+        IServerApplicationHost appHost,
+        IHttpClientFactory httpClientFactory,
+        ILogger logger,
+        MediaSourceInfo mediaSource,
+        Func<string, CancellationToken, Task<IDisposable>>? acquireConnection = null)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -73,6 +82,8 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
 
         OriginalStreamId = MediaSource.Id;
         UniqueId = Guid.NewGuid().ToString();
+        string uniqueId = UniqueId;
+        _connectionSlot = new UpstreamConnectionSlot(acquireConnection is null ? null : ct => acquireConnection(uniqueId, ct));
 
         _url = MediaSource.Path;
         string path = $"/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
@@ -109,31 +120,49 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
         }
 
         string channelId = MediaSource.Id;
+
+        // Reserve a concurrent-stream slot first: when the limit is reached this throws and no connection is opened.
+        await _connectionSlot.EnsureAsync(openCancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Starting restream for channel {ChannelId}.", channelId);
 
-        // Response stream is disposed manually.
-        HttpResponseMessage response = await _httpClientFactory.CreateClient(NamedClient.Default)
-            .GetAsync(_url, HttpCompletionOption.ResponseHeadersRead, openCancellationToken)
-            .ConfigureAwait(true);
-        _logger.LogDebug("Stream for channel {ChannelId} using url {Url}", channelId, _url);
-
-        // Handle a manual redirect in the case of a HTTPS to HTTP downgrade.
-        if (_redirects.Contains(response.StatusCode))
+        Stream inputStream;
+        try
         {
-            _logger.LogDebug("Stream for channel {ChannelId} redirected to url {Url}", channelId, response.Headers.Location);
-            response = await _httpClientFactory.CreateClient(NamedClient.Default)
-                .GetAsync(response.Headers.Location, HttpCompletionOption.ResponseHeadersRead, openCancellationToken)
+            // Response stream is disposed manually.
+            HttpResponseMessage response = await _httpClientFactory.CreateClient(NamedClient.Default)
+                .GetAsync(_url, HttpCompletionOption.ResponseHeadersRead, openCancellationToken)
                 .ConfigureAwait(true);
+            _logger.LogDebug("Stream for channel {ChannelId} using url {Url}", channelId, _url);
+
+            // Handle a manual redirect in the case of a HTTPS to HTTP downgrade.
+            if (_redirects.Contains(response.StatusCode))
+            {
+                _logger.LogDebug("Stream for channel {ChannelId} redirected to url {Url}", channelId, response.Headers.Location);
+                response = await _httpClientFactory.CreateClient(NamedClient.Default)
+                    .GetAsync(response.Headers.Location, HttpCompletionOption.ResponseHeadersRead, openCancellationToken)
+                    .ConfigureAwait(true);
+            }
+
+            inputStream = await response.Content.ReadAsStreamAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The upstream connection never opened, so it must not hold a slot.
+            _connectionSlot.Release();
+            throw;
         }
 
-        _inputStream = await response.Content.ReadAsStreamAsync(CancellationToken.None).ConfigureAwait(false);
-        _copyTask = _inputStream.CopyToAsync(_buffer, _tokenSource.Token)
+        _inputStream = inputStream;
+        _copyTask = inputStream.CopyToAsync(_buffer, _tokenSource.Token)
             .ContinueWith(
                 (Task t) =>
                 {
                     _logger.LogInformation("Restream for channel {ChannelId} finished with state {Status}", MediaSource.Id, t.Status);
-                    _inputStream.Close();
+                    inputStream.Close();
                     _inputStream = null;
+
+                    // The upstream connection is closed (stopped, ended or failed); free its slot.
+                    _connectionSlot.Release();
                 },
                 CancellationToken.None,
                 TaskContinuationOptions.None,
@@ -143,13 +172,20 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <inheritdoc />
     public async Task Close()
     {
-        if (_copyTask == null)
+        try
         {
-            throw new ArgumentNullException("copyTask");
-        }
+            if (_copyTask == null)
+            {
+                throw new ArgumentNullException("copyTask");
+            }
 
-        await _tokenSource.CancelAsync().ConfigureAwait(false);
-        await _copyTask.ConfigureAwait(false);
+            await _tokenSource.CancelAsync().ConfigureAwait(false);
+            await _copyTask.ConfigureAwait(false);
+        }
+        finally
+        {
+            _connectionSlot.Release();
+        }
     }
 
     /// <inheritdoc />
@@ -158,11 +194,23 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
         if (_inputStream == null)
         {
             _logger.LogWarning("Restream for channel {ChannelId} was not opened.", MediaSource.Id);
-            _ = Open(CancellationToken.None);
+            _ = ReopenAsync();
         }
 
         _logger.LogInformation("Opening restream {Count} for channel {ChannelId}.", ConsumerCount, MediaSource.Id);
         return new WrappedBufferReadStream(_buffer);
+    }
+
+    private async Task ReopenAsync()
+    {
+        try
+        {
+            await Open(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Unable to reopen restream for channel {ChannelId}", MediaSource.Id);
+        }
     }
 
     /// <summary>
@@ -173,6 +221,7 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
     {
         if (disposing)
         {
+            _connectionSlot.Release();
             _inputStream?.Dispose();
             _buffer.Dispose();
             _tokenSource.Dispose();
