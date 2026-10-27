@@ -207,11 +207,15 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
             };
         }
 
+        // The per-channel EPG shift (upstream #217) changes the displayed times only; the catch-up
+        // request keeps the provider's own start text.
+        TimeSpan shift = EpgShift.GetEpgShift(plugin.Configuration.LiveTvOverrides, channelId);
         foreach (EpgInfo epg in epgs.Listings.Where(epg => epg.Start <= end && epg.End >= start))
         {
             ParsedName parsedName = StreamService.ParseName(epg.Title);
             int durationMinutes = (int)Math.Ceiling((epg.End - epg.Start).TotalMinutes);
-            string dateTitle = epg.Start.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
+            DateTime shiftedStart = epg.Start + shift;
+            string dateTitle = shiftedStart.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
             List<MediaSourceInfo> sources = [
                 plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: epg.StartLocal, durationMinutes: durationMinutes)
             ];
@@ -219,7 +223,7 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
             items.Add(new()
             {
                 ContentType = ChannelMediaContentType.TvExtra,
-                DateCreated = epg.Start,
+                DateCreated = shiftedStart,
                 DateModified = StreamService.MediaSourceRevision,
                 Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channel.StreamId, epg.Id, day).ToString(),
                 IsLiveStream = false,
@@ -227,13 +231,15 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
                 MediaType = ChannelMediaType.Video,
                 Name = $"{dateTitle} - {parsedName.Title}",
                 Overview = epg.Description,
-                PremiereDate = epg.Start,
+                PremiereDate = shiftedStart,
                 RunTimeTicks = durationMinutes * TimeSpan.TicksPerMinute,
                 Tags = new List<string>(parsedName.Tags),
                 Type = ChannelItemType.Media,
             });
         }
 
+        // Never hand Jellyfin two items with the same id (upstream #242).
+        items = items.DistinctBy(item => item.Id).ToList();
         ChannelItemResult result = new()
         {
             Items = items,

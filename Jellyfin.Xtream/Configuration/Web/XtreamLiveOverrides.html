@@ -35,7 +35,7 @@
         <div class="sectionTitleContainer flex align-items-center">
           <h2 class="sectionTitle">TV channel overrides</h2>
         </div>
-        <div class="fieldDescription">For Custom XMLTV, map each Xtream channel to the XMLTV <code>&lt;channel id="..."&gt;</code>. The mapping affects guide data only.</div>
+        <div class="fieldDescription">For Custom XMLTV, map each Xtream channel to the XMLTV <code>&lt;channel id="..."&gt;</code>. The mapping affects guide data only. Use EPG shift when a channel's guide is off by a fixed amount (for example -1 h, or 0 h 30 min); it moves both Xtream and XMLTV programmes, and empty or 0 leaves the times unchanged.</div>
         <div class="inputContainer">
           <table class="overrides-table">
             <thead>
@@ -44,6 +44,7 @@
                 <th>Name</th>
                 <th>Logo</th>
                 <th>Custom EPG ID</th>
+                <th>EPG shift (h / min)</th>
               </tr>
             </thead>
             <tbody id="LiveChannels"></tbody>

@@ -69,7 +69,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             });
         }
 
-        return items;
+        // GetLiveStreams already dedupes by stream id; this guards the ids Jellyfin saves (upstream #242).
+        return GuideDeduplication.DistinctChannels(items, logger);
     }
 
     /// <inheritdoc />
@@ -167,6 +168,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         string epgMode = plugin.Configuration.EpgMode ?? "Xtream";
         bool customOnly = string.Equals(epgMode, "CustomXmlTv", StringComparison.OrdinalIgnoreCase);
         bool customWithFallback = string.Equals(epgMode, "CustomXmlTvWithXtreamFallback", StringComparison.OrdinalIgnoreCase);
+        TimeSpan shift = EpgShift.GetEpgShift(plugin.Configuration.LiveTvOverrides, streamId);
 
         if (customOnly || customWithFallback)
         {
@@ -188,13 +190,13 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                         logger,
                         streamId,
                         channelId,
-                        startDateUtc,
-                        endDateUtc)?.ToList();
+                        EpgShift.Unshift(startDateUtc, shift),
+                        EpgShift.Unshift(endDateUtc, shift))?.ToList();
 
                     // Channels covered by the XMLTV guide skip the per-channel Xtream EPG call (upstream #188).
                     if (customOnly || customPrograms is { Count: > 0 })
                     {
-                        return customPrograms ?? [];
+                        return GuideDeduplication.DistinctPrograms(EpgShift.Apply(customPrograms ?? [], shift), streamId, logger);
                     }
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
@@ -212,7 +214,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             }
         }
 
-        string key = $"xtream-epg-{channelId}";
+        string key = string.Format(CultureInfo.InvariantCulture, "xtream-epg-{0}-{1}", channelId, (int)shift.TotalMinutes);
         ICollection<ProgramInfo>? items = null;
         if (memoryCache.TryGetValue(key, out ICollection<ProgramInfo>? o))
         {
@@ -220,11 +222,11 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         }
         else
         {
-            items = new List<ProgramInfo>();
+            List<ProgramInfo> listings = [];
             EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, streamId, cancellationToken).ConfigureAwait(false);
             foreach (EpgInfo epg in epgs.Listings)
             {
-                items.Add(new()
+                listings.Add(new()
                 {
                     Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, epg.Id, 0).ToString(),
                     ChannelId = channelId,
@@ -235,6 +237,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 });
             }
 
+            items = GuideDeduplication.DistinctPrograms(EpgShift.Apply(listings, shift), streamId, logger).ToList();
             memoryCache.Set(key, items, DateTimeOffset.Now.AddMinutes(10));
         }
 
