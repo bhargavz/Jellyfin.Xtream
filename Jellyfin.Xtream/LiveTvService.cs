@@ -299,6 +299,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         }
 
         Plugin plugin = Plugin.Instance;
+        // Only calls player_api when server_info URLs are enabled and the cached copy is missing or expired.
+        await plugin.StreamService.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
         MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel, restream: true);
         ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == Restream.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
         if (stream == null)

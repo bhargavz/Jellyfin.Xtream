@@ -38,6 +38,12 @@ export default function (view) {
         visible.checked = config.IsCatchupVisible;
       }
     });
+    const hideStale = view.querySelector("#HideStaleEventChannels");
+    getConfig.then((config) => {
+      if (isCurrent()) {
+        hideStale.checked = !!config.HideStaleEventChannels;
+      }
+    });
     const table = view.querySelector('#LiveContent');
     Xtream.populateCategoriesTable(
       table,
@@ -55,6 +61,7 @@ export default function (view) {
 
         ApiClient.getPluginConfiguration(pluginId).then((config) => {
           config.IsCatchupVisible = visible.checked;
+          config.HideStaleEventChannels = hideStale.checked;
           config.LiveTv = data;
           return ApiClient.updatePluginConfiguration(pluginId, config);
         }).then((result) => {

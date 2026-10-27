@@ -79,8 +79,10 @@ public class XtreamController(IXtreamClient xtreamClient) : ControllerBase
     public async Task<ActionResult<ProviderTestResponse>> TestProvider(CancellationToken cancellationToken)
     {
         Plugin plugin = Plugin.Instance;
-        PlayerApi info = await xtreamClient.GetUserAndServerInfoAsync(plugin.Creds, cancellationToken).ConfigureAwait(false);
+        ConnectionInfo creds = plugin.Creds;
+        PlayerApi info = await xtreamClient.GetUserAndServerInfoAsync(creds, cancellationToken).ConfigureAwait(false);
         plugin.ProviderConnectionLimit.Set(plugin.DataVersion, info.UserInfo.MaxConnections);
+        plugin.StreamService.SetServerInfo(creds, info.ServerInfo);
         return Ok(new ProviderTestResponse()
         {
             ActiveConnections = info.UserInfo.ActiveCons,

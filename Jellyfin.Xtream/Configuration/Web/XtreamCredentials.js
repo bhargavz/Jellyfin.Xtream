@@ -29,6 +29,7 @@ export default function (view) {
         API_TIMEOUT_DEFAULT;
       // Older server builds don't have this property yet; treat it as 0 (use the provider's limit).
       view.querySelector('#MaxConcurrentStreams').value = config.MaxConcurrentStreams ?? MAX_STREAMS_DEFAULT;
+      view.querySelector('#UseServerInfoUrlForStreams').checked = !!config.UseServerInfoUrlForStreams;
       Dashboard.hideLoadingMsg();
     });
 
@@ -90,6 +91,7 @@ export default function (view) {
         config.MaxConcurrentStreams = Xtream.readInt(maxStreams, MAX_STREAMS_MIN, MAX_STREAMS_DEFAULT);
         apiTimeout.value = config.ApiTimeoutSeconds;
         maxStreams.value = config.MaxConcurrentStreams;
+        config.UseServerInfoUrlForStreams = view.querySelector('#UseServerInfoUrlForStreams').checked;
         return ApiClient.updatePluginConfiguration(pluginId, config);
       }).then((result) => {
         reloadStatus();
