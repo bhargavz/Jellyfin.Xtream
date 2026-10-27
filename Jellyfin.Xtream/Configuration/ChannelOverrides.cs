@@ -34,4 +34,9 @@ public class ChannelOverrides
     /// Gets or sets the url of the channel logo.
     /// </summary>
     public string? LogoUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets the mapped XMLTV channel id used for custom guide data.
+    /// </summary>
+    public string? EpgId { get; set; }
 }

@@ -12,7 +12,6 @@
 
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -163,6 +162,50 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             throw new ArgumentException("Unsupported channel");
         }
 
+        Plugin plugin = Plugin.Instance;
+        string epgMode = plugin.Configuration.EpgMode ?? "Xtream";
+        bool customOnly = string.Equals(epgMode, "CustomXmlTv", StringComparison.OrdinalIgnoreCase);
+        bool customWithFallback = string.Equals(epgMode, "CustomXmlTvWithXtreamFallback", StringComparison.OrdinalIgnoreCase);
+
+        if (customOnly || customWithFallback)
+        {
+            string? epgId = null;
+            if (plugin.Configuration.LiveTvOverrides.TryGetValue(streamId, out Configuration.ChannelOverrides? channelOverrides))
+            {
+                epgId = channelOverrides.EpgId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(plugin.Configuration.CustomEpgPath) && !string.IsNullOrWhiteSpace(epgId))
+            {
+                try
+                {
+                    List<ProgramInfo> customPrograms = XmlTvGuideService.GetPrograms(
+                        plugin.Configuration.CustomEpgPath,
+                        epgId,
+                        channelId,
+                        startDateUtc,
+                        endDateUtc).ToList();
+
+                    if (customOnly || customPrograms.Count > 0)
+                    {
+                        return customPrograms;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(exception, "Unable to load custom XMLTV guide data for stream {StreamId} mapped to {EpgId}", streamId, epgId);
+                    if (customOnly)
+                    {
+                        return [];
+                    }
+                }
+            }
+            else if (customOnly)
+            {
+                return [];
+            }
+        }
+
         string key = $"xtream-epg-{channelId}";
         ICollection<ProgramInfo>? items = null;
         if (memoryCache.TryGetValue(key, out ICollection<ProgramInfo>? o))
@@ -172,21 +215,18 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         else
         {
             items = new List<ProgramInfo>();
-            Plugin plugin = Plugin.Instance;
+            EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, streamId, cancellationToken).ConfigureAwait(false);
+            foreach (EpgInfo epg in epgs.Listings)
             {
-                EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, streamId, cancellationToken).ConfigureAwait(false);
-                foreach (EpgInfo epg in epgs.Listings)
+                items.Add(new()
                 {
-                    items.Add(new()
-                    {
-                        Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, epg.Id, 0).ToString(),
-                        ChannelId = channelId,
-                        StartDate = epg.Start,
-                        EndDate = epg.End,
-                        Name = epg.Title,
-                        Overview = epg.Description,
-                    });
-                }
+                    Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, epg.Id, 0).ToString(),
+                    ChannelId = channelId,
+                    StartDate = epg.Start,
+                    EndDate = epg.End,
+                    Name = epg.Title,
+                    Overview = epg.Description,
+                });
             }
 
             memoryCache.Set(key, items, DateTimeOffset.Now.AddMinutes(10));
@@ -216,7 +256,6 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         Plugin plugin = Plugin.Instance;
         MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel, restream: true);
         ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == Restream.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
-
         if (stream == null)
         {
             stream = new Restream(appHost, httpClientFactory, logger, mediaSourceInfo);

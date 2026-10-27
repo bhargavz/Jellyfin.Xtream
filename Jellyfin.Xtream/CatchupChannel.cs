@@ -72,18 +72,11 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
     /// <inheritdoc />
     public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken)
     {
-        switch (type)
-        {
-            default:
-                throw new ArgumentException("Unsupported image type: " + type);
-        }
+        return StreamService.GetChannelImage("Catchup");
     }
 
     /// <inheritdoc />
-    public IEnumerable<ImageType> GetSupportedChannelImages() => new List<ImageType>
-    {
-        // ImageType.Primary
-    };
+    public IEnumerable<ImageType> GetSupportedChannelImages() => [ImageType.Primary];
 
     /// <inheritdoc />
     public async Task<ChannelItemResult> GetChannelItems(InternalChannelItemQuery query, CancellationToken cancellationToken)
@@ -198,6 +191,7 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
                         new()
                         {
                             ContentType = ChannelMediaContentType.TvExtra,
+                            DateModified = StreamService.MediaSourceRevision,
                             Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channelId, 0, day).ToString(),
                             IsLiveStream = false,
                             MediaSources = [
@@ -226,6 +220,7 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
             {
                 ContentType = ChannelMediaContentType.TvExtra,
                 DateCreated = epg.Start,
+                DateModified = StreamService.MediaSourceRevision,
                 Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channel.StreamId, epg.Id, day).ToString(),
                 IsLiveStream = false,
                 MediaSources = sources,

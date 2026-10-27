@@ -69,21 +69,11 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
     /// <inheritdoc />
     public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken)
     {
-        switch (type)
-        {
-            default:
-                throw new ArgumentException("Unsupported image type: " + type);
-        }
+        return StreamService.GetChannelImage("Vod");
     }
 
     /// <inheritdoc />
-    public IEnumerable<ImageType> GetSupportedChannelImages()
-    {
-        return new List<ImageType>
-        {
-            // ImageType.Primary
-        };
-    }
+    public IEnumerable<ImageType> GetSupportedChannelImages() => [ImageType.Primary];
 
     /// <inheritdoc />
     public async Task<ChannelItemResult> GetChannelItems(InternalChannelItemQuery query, CancellationToken cancellationToken)
@@ -131,6 +121,7 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
         {
             ContentType = ChannelMediaContentType.Movie,
             DateCreated = DateTimeOffset.FromUnixTimeSeconds(added).DateTime,
+            DateModified = StreamService.MediaSourceRevision,
             Id = $"{StreamService.StreamPrefix}{stream.StreamId}",
             ImageUrl = stream.StreamIcon,
             IsLiveStream = false,

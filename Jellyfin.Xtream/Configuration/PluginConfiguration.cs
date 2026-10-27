@@ -45,6 +45,17 @@ public class PluginConfiguration : BasePluginConfiguration
     public string UserAgent { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the guide-data mode. Supported values are Xtream, CustomXmlTv,
+    /// and CustomXmlTvWithXtreamFallback.
+    /// </summary>
+    public string EpgMode { get; set; } = "Xtream";
+
+    /// <summary>
+    /// Gets or sets the local XMLTV file used by custom guide modes.
+    /// </summary>
+    public string CustomEpgPath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets a value indicating whether the Catch-up channel is visible.
     /// </summary>
     public bool IsCatchupVisible { get; set; }
@@ -78,6 +89,16 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the streams displayed in Series.
     /// </summary>
     public SerializableDictionary<int, HashSet<int>> Series { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the image URLs or local paths of the top-level channels, keyed by Vod, Series or Catchup.
+    /// </summary>
+    public SerializableDictionary<string, string> ChannelImages { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the image URLs or local paths of categories, keyed by Vod:{categoryId} or Series:{categoryId}.
+    /// </summary>
+    public SerializableDictionary<string, string> CategoryImages { get; set; } = [];
 
     /// <summary>
     /// Gets or sets the channel override configuration for Live TV.
