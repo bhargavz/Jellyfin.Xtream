@@ -178,6 +178,7 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
         StreamInfo channel = streams.FirstOrDefault(s => s.StreamId == channelId)
             ?? throw new ArgumentException($"Channel with id {channelId} not found in category {categoryId}");
         EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, channelId, cancellationToken).ConfigureAwait(false);
+        await plugin.StreamService.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
         List<ChannelItemInfo> items = [];
 
         // Create fallback single-stream catch-up if no EPG is available.

@@ -87,6 +87,18 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool IsTmdbVodOverride { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether live channels whose name embeds an event start
+    /// more than 12 hours in the past are hidden.
+    /// </summary>
+    public bool HideStaleEventChannels { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether live and catch-up stream URLs are built from the
+    /// server_info returned by player_api instead of <see cref="BaseUrl"/>.
+    /// </summary>
+    public bool UseServerInfoUrlForStreams { get; set; }
+
+    /// <summary>
     /// Gets or sets the channels displayed in Live TV.
     /// </summary>
     public SerializableDictionary<int, HashSet<int>> LiveTv { get; set; } = [];

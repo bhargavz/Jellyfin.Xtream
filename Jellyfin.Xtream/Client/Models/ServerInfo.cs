@@ -28,6 +28,12 @@ public class ServerInfo
     [JsonProperty("port")]
     public string Port { get; set; } = string.Empty;
 
+    [JsonProperty("https_port")]
+    public string HttpsPort { get; set; } = string.Empty;
+
+    [JsonProperty("server_protocol")]
+    public string ServerProtocol { get; set; } = string.Empty;
+
     [JsonProperty("rtmp_port")]
     public string RtmpPort { get; set; } = string.Empty;
 

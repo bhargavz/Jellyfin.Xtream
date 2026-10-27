@@ -14,6 +14,7 @@ export default function (view) {
       view.querySelector('#Username').value = config.Username;
       view.querySelector('#Password').value = config.Password;
       view.querySelector('#UserAgent').value = config.UserAgent;
+      view.querySelector('#UseServerInfoUrlForStreams').checked = !!config.UseServerInfoUrlForStreams;
       Dashboard.hideLoadingMsg();
     });
 
@@ -59,6 +60,7 @@ export default function (view) {
         config.Username = view.querySelector('#Username').value;
         config.Password = view.querySelector('#Password').value;
         config.UserAgent = view.querySelector('#UserAgent').value;
+        config.UseServerInfoUrlForStreams = view.querySelector('#UseServerInfoUrlForStreams').checked;
         ApiClient.updatePluginConfiguration(pluginId, config).then((result) => {
           reloadStatus();
           Dashboard.processPluginConfigurationUpdateResult(result);

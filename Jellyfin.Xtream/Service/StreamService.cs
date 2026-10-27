@@ -105,6 +105,17 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
 
     private static readonly Regex _tagRegex = TagRegex();
 
+    private static readonly TimeSpan _serverInfoMaxAge = TimeSpan.FromHours(6);
+
+    private static readonly TimeSpan _serverInfoRetryDelay = TimeSpan.FromMinutes(5);
+
+    private volatile CachedServerInfo? _serverInfo;
+
+    /// <summary>
+    /// Gets or sets the clock used for stale event channels and the server_info cache. Replaceable for tests.
+    /// </summary>
+    internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
+
     /// <summary>
     /// Parses tags in the name of a stream entry.
     /// The name commonly contains tags of the forms:
@@ -202,12 +213,163 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
     {
         PluginConfiguration config = Plugin.Instance.Configuration;
 
+        // Refreshes the cached server_info once per guide refresh at most; no-op unless the option is on.
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+
         IEnumerable<StreamInfo> streams = await xtreamClient.GetLiveStreamsAsync(Plugin.Instance.Creds, cancellationToken).ConfigureAwait(false);
-        return WithUsableIds(streams, (StreamInfo channel) => channel.StreamId, "live channel")
+        IEnumerable<StreamInfo> configured = WithUsableIds(streams, (StreamInfo channel) => channel.StreamId, "live channel")
             .Where((StreamInfo channel) => channel.CategoryId.HasValue && IsConfigured(config.LiveTv, channel.CategoryId.Value, channel.StreamId))
             // Some providers list the same stream in several categories; Jellyfin needs one channel per id.
             .DistinctBy((StreamInfo channel) => channel.StreamId);
+        return config.HideStaleEventChannels ? WithoutStaleEvents(configured, UtcNow(), logger) : configured;
     }
+
+    /// <summary>
+    /// Drops the channels whose name embeds an event start more than <see cref="EventChannelTime.StaleAfter"/> ago.
+    /// </summary>
+    /// <param name="streams">The channels to filter.</param>
+    /// <param name="nowUtc">The current time in UTC.</param>
+    /// <param name="logger">The logger to report the hidden count to, if any.</param>
+    /// <returns>The channels which are not stale event channels.</returns>
+    internal static List<StreamInfo> WithoutStaleEvents(IEnumerable<StreamInfo> streams, DateTime nowUtc, ILogger? logger = null)
+    {
+        List<StreamInfo> source = streams.ToList();
+        List<StreamInfo> kept = source.Where(stream => !EventChannelTime.IsStale(stream.Name, nowUtc)).ToList();
+        if (kept.Count != source.Count)
+        {
+            logger?.LogInformation("Hid {Count} event channels whose event started more than 12 hours ago", source.Count - kept.Count);
+        }
+
+        return kept;
+    }
+
+    /// <summary>
+    /// Caches the server_info of a player_api response, so stream URLs can be built from it without extra calls.
+    /// </summary>
+    /// <param name="connectionInfo">The connection the response belongs to.</param>
+    /// <param name="serverInfo">The server_info of the response, or null when it had none.</param>
+    public void SetServerInfo(ConnectionInfo connectionInfo, ServerInfo? serverInfo)
+    {
+        _serverInfo = new CachedServerInfo(ServerInfoKey(connectionInfo), serverInfo, UtcNow() + _serverInfoMaxAge);
+    }
+
+    /// <summary>
+    /// Fetches server_info from player_api when <see cref="PluginConfiguration.UseServerInfoUrlForStreams"/> is on
+    /// and the cached copy is missing, expired or belongs to other credentials.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task completing once the cache is current.</returns>
+    public async Task EnsureServerInfoAsync(CancellationToken cancellationToken)
+    {
+        Plugin plugin = Plugin.Instance;
+        if (!plugin.Configuration.UseServerInfoUrlForStreams)
+        {
+            return;
+        }
+
+        ConnectionInfo creds = plugin.Creds;
+        CachedServerInfo? cached = _serverInfo;
+        if (cached is not null && cached.Key == ServerInfoKey(creds) && UtcNow() < cached.RefreshAfterUtc)
+        {
+            return;
+        }
+
+        try
+        {
+            PlayerApi info = await xtreamClient.GetUserAndServerInfoAsync(creds, cancellationToken).ConfigureAwait(false);
+            SetServerInfo(creds, info?.ServerInfo);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Unable to fetch server_info, stream URLs use the base URL until the next attempt");
+            // Keep a previous server_info for the same credentials, and retry in a few minutes rather than per stream.
+            ServerInfo? previous = cached is not null && cached.Key == ServerInfoKey(creds) ? cached.Info : null;
+            _serverInfo = new CachedServerInfo(ServerInfoKey(creds), previous, UtcNow() + _serverInfoRetryDelay);
+        }
+    }
+
+    /// <summary>
+    /// Gets the base URL live and catch-up streams are served from.
+    /// </summary>
+    /// <param name="config">The plugin configuration.</param>
+    /// <param name="connectionInfo">The connection the streams are requested with.</param>
+    /// <returns>The server_info URL when enabled and known, else the configured base URL.</returns>
+    internal string GetStreamBaseUrl(PluginConfiguration config, ConnectionInfo connectionInfo)
+    {
+        if (!config.UseServerInfoUrlForStreams)
+        {
+            return config.BaseUrl;
+        }
+
+        CachedServerInfo? cached = _serverInfo;
+        ServerInfo? info = cached is not null && cached.Key == ServerInfoKey(connectionInfo) ? cached.Info : null;
+        return BuildStreamBaseUrl(info, config.BaseUrl);
+    }
+
+    /// <summary>
+    /// Builds a stream base URL (protocol://host[:port], without trailing slash) from an Xtream server_info.
+    /// The port is omitted when it is the default of the protocol.
+    /// </summary>
+    /// <param name="serverInfo">The server_info, if any.</param>
+    /// <param name="fallbackBaseUrl">The URL to use when server_info has no usable host.</param>
+    /// <returns>The stream base URL.</returns>
+    public static string BuildStreamBaseUrl(ServerInfo? serverInfo, string fallbackBaseUrl)
+    {
+        string url = serverInfo?.Url?.Trim() ?? string.Empty;
+        if (url.Length == 0)
+        {
+            return fallbackBaseUrl;
+        }
+
+        string protocol = serverInfo!.ServerProtocol?.Trim().ToLowerInvariant() ?? string.Empty;
+        int? explicitPort = null;
+        string host;
+        if (url.Contains("://", StringComparison.Ordinal))
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || string.IsNullOrEmpty(uri.Host))
+            {
+                return fallbackBaseUrl;
+            }
+
+            if (protocol is not ("http" or "https"))
+            {
+                protocol = uri.Scheme;
+            }
+
+            host = uri.Host;
+            explicitPort = uri.IsDefaultPort ? null : uri.Port;
+        }
+        else
+        {
+            // A bare host, possibly with a port or a path: "turbobunny.net", "host:8080", "host/".
+            if (!Uri.TryCreate("http://" + url, UriKind.Absolute, out Uri? uri) || string.IsNullOrEmpty(uri.Host))
+            {
+                return fallbackBaseUrl;
+            }
+
+            host = uri.Host;
+            explicitPort = uri.IsDefaultPort ? null : uri.Port;
+        }
+
+        if (protocol is not ("http" or "https"))
+        {
+            protocol = "http";
+        }
+
+        int? port = explicitPort;
+        string portText = (protocol == "https" ? serverInfo.HttpsPort : serverInfo.Port)?.Trim() ?? string.Empty;
+        if (port is null && int.TryParse(portText, NumberStyles.None, CultureInfo.InvariantCulture, out int configuredPort) && configuredPort is > 0 and <= 65535)
+        {
+            port = configuredPort;
+        }
+
+        int defaultPort = protocol == "https" ? 443 : 80;
+        return port is int p && p != defaultPort
+            ? string.Create(CultureInfo.InvariantCulture, $"{protocol}://{host}:{p}")
+            : $"{protocol}://{host}";
+    }
+
+    private static string ServerInfoKey(ConnectionInfo connectionInfo) => connectionInfo.BaseUrl + "\n" + connectionInfo.UserName;
 
     /// <summary>
     /// Gets an async iterator for the configured channels after applying the configured overrides.
@@ -540,7 +702,11 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
         }
 
         PluginConfiguration config = Plugin.Instance.Configuration;
-        string uri = $"{config.BaseUrl}{prefix}/{config.Username}/{config.Password}/{id}";
+        // VOD and series keep the base URL; server_info only describes where live and catch-up streams are served.
+        string baseUrl = type is StreamType.Live or StreamType.CatchUp
+            ? GetStreamBaseUrl(config, Plugin.Instance.Creds)
+            : config.BaseUrl;
+        string uri = $"{baseUrl}{prefix}/{config.Username}/{config.Password}/{id}";
         if (!string.IsNullOrEmpty(extension))
         {
             uri += $".{extension}";
@@ -549,7 +715,7 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
         if (type == StreamType.CatchUp)
         {
             string? startString = start?.ToString("yyyy'-'MM'-'dd':'HH'-'mm", CultureInfo.InvariantCulture);
-            uri = $"{config.BaseUrl}/streaming/timeshift.php?username={config.Username}&password={config.Password}&stream={id}&start={startString}&duration={durationMinutes}";
+            uri = $"{baseUrl}/streaming/timeshift.php?username={config.Username}&password={config.Password}&stream={id}&start={startString}&duration={durationMinutes}";
         }
 
         bool isLive = type == StreamType.Live;
@@ -610,4 +776,12 @@ public partial class StreamService(IXtreamClient xtreamClient, ILogger<StreamSer
     // Pipe variants: | (U+007C), │ (U+2502), ┃ (U+2503), ｜ (U+FF5C)
     [GeneratedRegex(@"\[([^\]]+)\]|[|│┃｜]\s*([^|│┃｜]+?)\s*[|│┃｜]")]
     private static partial Regex TagRegex();
+
+    /// <summary>
+    /// The cached server_info of one set of credentials.
+    /// </summary>
+    /// <param name="Key">Identifies the credentials the info belongs to.</param>
+    /// <param name="Info">The server_info, or null when unknown.</param>
+    /// <param name="RefreshAfterUtc">When to fetch it again.</param>
+    private sealed record CachedServerInfo(string Key, ServerInfo? Info, DateTime RefreshAfterUtc);
 }
