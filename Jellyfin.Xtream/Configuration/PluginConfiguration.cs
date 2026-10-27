@@ -61,6 +61,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public int CustomEpgRefreshHours { get; set; } = 24;
 
     /// <summary>
+    /// Gets or sets extra XMLTV sources (http(s) URLs or local paths), one per line, used in order after
+    /// <see cref="CustomEpgPath"/> for channels that the earlier sources do not cover. Lines starting with # are ignored.
+    /// </summary>
+    public string FallbackEpgUrls { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the timeout of Xtream API calls in seconds. Large providers need more than the 100 second default.
     /// Applied when Jellyfin starts.
     /// </summary>
