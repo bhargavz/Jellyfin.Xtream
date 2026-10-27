@@ -67,6 +67,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public int ApiTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
+    /// Gets or sets the maximum number of concurrent upstream streams (live restreams).
+    /// 0 uses the provider's <c>user_info.max_connections</c> (unlimited when it is unknown); a positive value overrides it.
+    /// Opening a channel that is already streaming shares its connection and does not count again.
+    /// </summary>
+    public int MaxConcurrentStreams { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether the Catch-up channel is visible.
     /// </summary>
     public bool IsCatchupVisible { get; set; }

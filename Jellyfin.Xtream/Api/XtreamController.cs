@@ -80,6 +80,7 @@ public class XtreamController(IXtreamClient xtreamClient) : ControllerBase
     {
         Plugin plugin = Plugin.Instance;
         PlayerApi info = await xtreamClient.GetUserAndServerInfoAsync(plugin.Creds, cancellationToken).ConfigureAwait(false);
+        plugin.ProviderConnectionLimit.Set(plugin.DataVersion, info.UserInfo.MaxConnections);
         return Ok(new ProviderTestResponse()
         {
             ActiveConnections = info.UserInfo.ActiveCons,

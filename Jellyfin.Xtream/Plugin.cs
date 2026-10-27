@@ -60,6 +60,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         }
 
         StreamService = new(xtreamClient, streamServiceLogger);
+        ProviderConnectionLimit = new(async cancellationToken =>
+            (await xtreamClient.GetUserAndServerInfoAsync(Creds, cancellationToken).ConfigureAwait(false)).UserInfo.MaxConnections);
         TaskService = new(taskManager);
     }
 
@@ -88,6 +90,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// Gets the stream service instance.
     /// </summary>
     public StreamService StreamService { get; init; }
+
+    /// <summary>
+    /// Gets the counter of open upstream connections, which enforces <see cref="PluginConfiguration.MaxConcurrentStreams"/>.
+    /// </summary>
+    public StreamLimiter StreamLimiter { get; } = new();
+
+    /// <summary>
+    /// Gets the cached provider <c>max_connections</c>.
+    /// </summary>
+    public ProviderConnectionLimit ProviderConnectionLimit { get; init; }
 
     private IXtreamClient XtreamClient { get; init; }
 
