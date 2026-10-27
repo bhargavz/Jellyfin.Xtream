@@ -22,14 +22,8 @@ next steps.
 ```powershell
 $env:PATH = 'C:\Program Files\dotnet;' + $env:PATH          # .NET SDK 10.0.403 (installed 2026-10-26 via winget)
 dotnet build -c Release
-<<<<<<< HEAD
-dotnet test  -c Release                                     # 628 tests; TreatWarningsAsErrors is on
-dotnet publish Jellyfin.Xtream\Jellyfin.Xtream.csproj -c Release -o .tmp\publish-<ver>
-# zip = Jellyfin.Xtream.dll + meta.json, in dist\jellyfin-xtream_<ver>.zip (see docs/HANDOFF.md "Packaging")
-=======
-dotnet test  -c Release                                     # 609 tests; TreatWarningsAsErrors is on
+dotnet test  -c Release                                     # TreatWarningsAsErrors is on
 powershell -ExecutionPolicy Bypass -File scripts\Package.ps1   # publish + dist\jellyfin-xtream_<ver>.zip (dll + meta.json), prints MD5
->>>>>>> feat/release
 powershell -ExecutionPolicy Bypass -File scripts\Install-Local.ps1 -EpgUrl https://mybunny.tv/epg.xml
 ```
 
