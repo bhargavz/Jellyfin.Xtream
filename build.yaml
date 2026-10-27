@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.10.1.0"
+version: "0.11.0.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -17,3 +17,9 @@ changelog: >
   channels skip per-channel Xtream EPG calls, duplicate streams across categories removed,
   configurable API timeout (default 300 s), EPG "start" text no longer breaks parsing,
   hex Xtream EPG ids no longer collapse a channel's programmes into one GUID (0.10.1).
+  0.11: max-concurrent-streams limit with a clean "limit reached" error (same-channel viewers share one
+  connection); fallback XMLTV URLs (e.g. epgshare01) that fill only channels the provider guide misses;
+  stricter channel matching (feed tags, country hints, call signs); per-channel EPG time shift (#217);
+  duplicate guide ids guarded and logged (#242); settings render once (#256) with UI fields for API
+  timeout, max streams and guide refresh; option to hide stale event channels; option to build stream
+  URLs from the provider's server_info.
