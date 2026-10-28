@@ -18,11 +18,10 @@ done and add a dated log entry.
   - [x] #271: EPG `start` is now kept as text (`EpgInfo.StartLocalTime`); catch-up uses a tolerant parse (`StartLocal`).
   - [x] #289/#280: `ApiTimeoutSeconds` setting (default 300 s), applied at startup (`XtreamClient.UpdateTimeout`).
   - [x] Duplicate stream_ids across categories are deduped (`StreamService.GetLiveStreams`).
-  - [ ] #217 per-channel EPG time shift (port `GetEpgShift` from closed PR #296). Not needed for MyBunny, whose XMLTV
-    times have correct offsets.
-  - [ ] #242 log the offending ids on UNIQUE-constraint save failures and document the SQL cleanup.
-  - [ ] #256 guard the settings JS against double render. Also: there is still no UI field for `ApiTimeoutSeconds`
-    or `CustomEpgRefreshHours` (edit the XML or the API).
+  - [x] #217 per-channel EPG time shift (`ChannelOverrides.EpgShiftMinutes`, ±24 h, column on the TV overrides page).
+  - [x] #242 duplicate guide ids are deduplicated and logged (`Service/GuideDeduplication.cs`); SQL cleanup in AGENTS.md.
+  - [x] #256 settings pages render once (`Xtream.beginRender`); UI fields for `ApiTimeoutSeconds`,
+    `MaxConcurrentStreams` (Credentials) and `CustomEpgRefreshHours` (TV overrides).
 - [x] **Phase 4** (partial):
   - [x] XMLTV from an **http(s) URL**: downloaded to `<plugin data>\epg-cache\xmltv-<hash>.xml` and reused for
     `CustomEpgRefreshHours` (24). Gzip is detected by magic bytes. If a refresh fails, the stale copy is used.
@@ -31,19 +30,26 @@ done and add a dated log entry.
     display name (`XmlTvGuideService.NormalizeName`; ambiguous names are never matched). Coverage is logged on every
     guide build.
   - [x] Channels covered by XMLTV skip the per-channel Xtream EPG call (#188), in mode `CustomXmlTvWithXtreamFallback`.
-  - [ ] Max-concurrent-streams setting and a clean "limit reached" error. Same-channel sharing already exists
-    (`Restream` reuse in `GetChannelStreamWithDirectStreamProvider`).
+  - [x] Max-concurrent-streams (`MaxConcurrentStreams`, 0 = provider's `max_connections`, cached 6 h) with a
+    `StreamLimitReachedException` (a `LiveTvConflictException`). Catch-up and VOD are not counted. Jellyfin's
+    middleware turns it into HTTP 500 "Error processing request"; the plugin log names the blocking channel.
   - [x] Verify that Jellyfin doesn't open a second probe connection (1-connection plan). Checked 2026-10-27: one
     `Starting restream` per play; Jellyfin's open-time probe and the client both attach to it ("restream 1").
-  - [ ] Option to build stream URLs from `server_info.url`, and to hide stale event channels.
-- [x] **Phase 5** (local): `dist\jellyfin-xtream_0.10.1.0.zip` (current; 0.10.0.0 superseded) plus `scripts\Install-Local.ps1`.
-  - [ ] GitHub Actions release and `repository.json` on GitHub Pages for the fork (the README still points at
-    vandernorth's repo).
+  - [x] `UseServerInfoUrlForStreams` (Credentials page) and `HideStaleEventChannels` (Live TV page), both off by default.
+  - [x] Fallback XMLTV URLs (`FallbackEpgUrls`, TV overrides page, one per line, `#` comments). Each source only fills
+    channels the earlier ones left unmatched; cached per URL with conditional GET; last good copy kept on failure;
+    30-min backoff. Stricter matcher (`Service/XmlTvChannelMatcher.cs`: feed tags, country hints, call signs).
+    Set: epgshare01 US2, PLEX1, IN1, IN4 (US_LOCALS1 adds only 4 Portland locals for 557 MB). If https is blocked, try http://.
+    Known soft spot: (MC Radio) channels match Plex music channels of the same name.
+- [x] **Phase 5** (local): `dist\jellyfin-xtream_0.11.0.0.zip` (current) plus `scripts\Install-Local.ps1`.
+  - [x] GitHub Actions release (`.github/workflows/release.yaml`, `scripts/Package.ps1`,
+    `scripts/Update-RepositoryManifest.ps1`) publishing `repository.json` to GitHub Pages; README updated.
+  - [x] Hex EPG id fix offered upstream: https://github.com/Kevinjil/Jellyfin.Xtream/pull/303
 - [x] **Verification after install**: done 2026-10-27 on 0.10.1.0, all five checks pass (results in the log below).
 
 ## Verify after install
 
-1. `GET /Plugins?ApiKey=…`: "Jellyfin Xtream" is the installed version (now **0.10.1.0**), status **Active**.
+1. `GET /Plugins?ApiKey=…`: "Jellyfin Xtream" is the installed version (now **0.11.0.0**), status **Active**.
 2. Run Scheduled Tasks → Refresh Guide. The log should contain `Downloaded XMLTV guide from mybunny.tv`,
    `XMLTV guide matched N of M channels …` and `Loaded … XMLTV programmes`.
 3. `GET /LiveTv/Channels?ApiKey=…`: `TotalRecordCount` equals the unique selected streams.
@@ -86,3 +92,15 @@ the Kevinjil repo nor vandernorth's repo offers a "newer" build.
     now started with `-WorkingDirectory` the server folder. Before this, jellyfin.exe inherited the caller's cwd, which
     caused a harmless WebRootPath warning.
   - Event channels from the previous day are removed by Jellyfin on refresh, as expected: the provider rotates them.
+- **2026-10-27 (0.11.0.0)**: Six feature branches built by subagents in worktrees and merged (settings UI, upstream
+  #217/#242/#256, release workflow, stream limit, channels options, epgshare01 fallback). 775 tests green, 0 warnings.
+  Installed and verified on Jellyfin 12.3.0:
+  - XXX (category 16) unticked: 625 channels, none XXX.
+  - Refresh Guide about 3 min. Provider guide matched 463 of 626 (epg id 169, name 294); epgshare01 added 9 + 13 + 10 + 6.
+    **482 of 625 channels have programmes in the next 24 h** (was 331 of 712). Spot-checks: Cinemax Hits, HBO Hits,
+    MSNBC, Travel Channel and ESPN all show the current programme.
+  - Stream limit, one provider connection at a time: A opens; B from a second device is refused
+    (`Xtream stream limit blocked "US MSNBC (S)": 1 of 1 in use ("US: ESPN")`); A from the second device shares
+    the same live stream id; after closing A, B opens. One `Starting restream` per channel.
+  - Not checked in a browser: the settings pages (covered by `ConfigurationPageTests`), and playback with
+    `UseServerInfoUrlForStreams` on (left off).
