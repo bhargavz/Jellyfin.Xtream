@@ -101,7 +101,8 @@ public static partial class XmlTvGuideService
             return file.Length > 0 ? $"{uri.Host}/{file}" : uri.Host;
         }
 
-        return Path.GetFileName(source);
+        // Split on both separators: Path.GetFileName on Linux keeps a Windows path whole.
+        return source[(source.LastIndexOfAny(['/', '\\']) + 1)..];
     }
 
     /// <summary>Returns whether the configured source is a URL rather than a local file.</summary>
